@@ -12,7 +12,11 @@ vagrant up
 vagrant halt
 vagrant destroy
 vagrant ssh vm1
+vagrant ssh vm2
+vagrant ssh vm3
 vagrant provision vm1
+vagrant provision vm2
+vagrant provision vm3
 ```
 
 ## Configuration du Pare-feu
