@@ -1,0 +1,12 @@
+---
+- name: Restart Prometheus
+  community.docker.docker_container:
+    name: "{{ prometheus_container_name }}"
+    state: started
+    restart: yes
+
+- name: Restart AlertManager
+  community.docker.docker_container:
+    name: "{{ alertmanager_container_name }}"
+    state: started
+    restart: yes

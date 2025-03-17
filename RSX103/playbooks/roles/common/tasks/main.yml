@@ -1,0 +1,15 @@
+---
+- name: Create Docker network for monitoring
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
+- name: Ensure directories for persistent data
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - "{{ prometheus_data_dir }}"
+    - "{{ grafana_data_dir }}"
+    - /opt/alertmanager/data

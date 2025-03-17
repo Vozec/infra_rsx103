@@ -1,33 +1,19 @@
 ---
-- name: Déployer Nginx via Docker Compose sur Ubuntu 24.04
+- name: Déployer Nginx sous Docker sur Ubuntu 24.04
   hosts: all
   become: true
   tasks:
-    - name: Créer le répertoire de déploiement pour Docker Compose
-      file:
-        path: /opt/nginx
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
+    - name: Tirer l'image officielle de Nginx
+      docker_image:
+        name: nginx
+        tag: latest
+        source: pull
 
-    - name: Copier le fichier docker-compose.yml
-      copy:
-        dest: /opt/nginx/docker-compose.yml
-        content: |
-          version: "3.8"
-          services:
-            nginx:
-              image: nginx:latest
-              container_name: nginx
-              ports:
-                - "80:80"
-              restart: always
-        owner: root
-        group: root
-        mode: '0644'
-
-    - name: Déployer le container Nginx avec Docker Compose
-      community.docker.docker_compose:
-        project_src: /opt/nginx
-        state: present
+    - name: Lancer le container Nginx
+      docker_container:
+        name: nginx
+        image: nginx:latest
+        state: started
+        restart_policy: always
+        published_ports:
+          - "80:80"

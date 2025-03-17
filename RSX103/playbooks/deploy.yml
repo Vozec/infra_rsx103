@@ -1,0 +1,19 @@
+---
+- name: Deploy Prometheus and Grafana with Docker
+  hosts: monitoring
+  become: true
+  vars:
+    docker_network_name: monitoring
+    prometheus_container_name: prometheus
+    grafana_container_name: grafana
+    prometheus_port: 9090
+    grafana_port: 3000
+    prometheus_data_dir: /opt/prometheus/data
+    grafana_data_dir: /opt/grafana/data
+    alertmanager_port: 9093
+    alertmanager_container_name: alertmanager
+
+  roles:
+    - common
+    - prometheus
+    - grafana

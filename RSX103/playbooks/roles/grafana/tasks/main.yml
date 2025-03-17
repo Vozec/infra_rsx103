@@ -1,0 +1,53 @@
+---
+- name: Deploy Grafana
+  community.docker.docker_container:
+    name: "{{ grafana_container_name }}"
+    image: grafana/grafana:latest
+    restart_policy: always
+    networks:
+      - name: "{{ docker_network_name }}"
+    ports:
+      - "{{ grafana_port }}:3000"
+    volumes:
+      - "{{ grafana_data_dir }}:/var/lib/grafana"
+      - "{{ grafana_data_dir }}/provisioning:/etc/grafana/provisioning"
+    env:
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_DOMAIN: "localhost"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-clock-panel,grafana-worldmap-panel"
+    state: started
+
+- name: Ensure Grafana provisioning directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - "{{ grafana_data_dir }}/provisioning/datasources"
+    - "{{ grafana_data_dir }}/provisioning/dashboards"
+    - "{{ grafana_data_dir }}/dashboards"
+
+- name: Configure Prometheus data source
+  template:
+    src: datasource.yml.j2
+    dest: "{{ grafana_data_dir }}/provisioning/datasources/prometheus.yml"
+    mode: '0644'
+  notify:
+    - Restart Grafana
+
+- name: Configure dashboard provisioning
+  template:
+    src: dashboard_provider.yml.j2
+    dest: "{{ grafana_data_dir }}/provisioning/dashboards/providers.yml"
+    mode: '0644'
+  notify:
+    - Restart Grafana
+
+- name: Deploy monitoring dashboard
+  template:
+    src: dashboard.json.j2
+    dest: "{{ grafana_data_dir }}/dashboards/monitoring_dashboard.json"
+    mode: '0644'
+  notify:
+    - Restart Grafana

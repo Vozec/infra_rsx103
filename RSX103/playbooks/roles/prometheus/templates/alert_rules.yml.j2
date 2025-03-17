@@ -1,0 +1,38 @@
+groups:
+- name: service_alerts
+  rules:
+  - alert: ServiceDown
+    expr: up == 0
+    for: 30s
+    labels:
+      severity: critical
+    annotations:
+      summary: "Service {{ '{{' }} $labels.job {{ '}}' }} is down"
+      description: "Le service {{ '{{' }} $labels.job {{ '}}' }} sur l'instance {{ '{{' }} $labels.instance {{ '}}' }} est inaccessible depuis au moins 30 secondes."
+      
+  - alert: HighServiceResponseTime
+    expr: rate(http_request_duration_seconds_sum[1m]) / rate(http_request_duration_seconds_count[1m]) > 1
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Temps de réponse élevé du service {{ '{{' }} $labels.job {{ '}}' }}"
+      description: "Le service {{ '{{' }} $labels.job {{ '}}' }} a un temps de réponse moyen supérieur à 1 seconde depuis 2 minutes."
+
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Utilisation CPU élevée sur {{ '{{' }} $labels.instance {{ '}}' }}"
+      description: "L'utilisation CPU est supérieure à 80% depuis 5 minutes sur {{ '{{' }} $labels.instance {{ '}}' }}."
+
+  - alert: HighMemoryUsage
+    expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Utilisation mémoire élevée sur {{ '{{' }} $labels.instance {{ '}}' }}"
+      description: "L'utilisation de la mémoire est supérieure à 80% depuis 5 minutes sur {{ '{{' }} $labels.instance {{ '}}' }}."

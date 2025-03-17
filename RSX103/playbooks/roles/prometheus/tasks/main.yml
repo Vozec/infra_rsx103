@@ -1,0 +1,55 @@
+---
+- name: Create Prometheus configuration
+  template:
+    src: prometheus.yml.j2
+    dest: "{{ prometheus_data_dir }}/prometheus.yml"
+    mode: '0644'
+
+- name: Create Alerting rules
+  template:
+    src: alert_rules.yml.j2
+    dest: "{{ prometheus_data_dir }}/alert_rules.yml"
+    mode: '0644'
+
+- name: Deploy AlertManager
+  community.docker.docker_container:
+    name: "{{ alertmanager_container_name }}"
+    image: prom/alertmanager:latest
+    restart_policy: always
+    networks:
+      - name: "{{ docker_network_name }}"
+    ports:
+      - "{{ alertmanager_port }}:9093"
+    volumes:
+      - /opt/alertmanager/data:/alertmanager
+      - "{{ prometheus_data_dir }}/alertmanager.yml:/etc/alertmanager/config.yml"
+    state: started
+
+- name: Create Alert Manager configuration
+  template:
+    src: alertmanager.yml.j2
+    dest: "{{ prometheus_data_dir }}/alertmanager.yml"
+    mode: '0644'
+  notify:
+    - Restart AlertManager
+
+- name: Deploy Prometheus
+  community.docker.docker_container:
+    name: "{{ prometheus_container_name }}"
+    image: prom/prometheus:latest
+    restart_policy: always
+    networks:
+      - name: "{{ docker_network_name }}"
+    ports:
+      - "{{ prometheus_port }}:9090"
+    volumes:
+      - "{{ prometheus_data_dir }}:/prometheus"
+      - "{{ prometheus_data_dir }}/prometheus.yml:/etc/prometheus/prometheus.yml"
+      - "{{ prometheus_data_dir }}/alert_rules.yml:/etc/prometheus/alert_rules.yml"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    state: started
