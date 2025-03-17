@@ -1,0 +1,19 @@
+---
+- name: D\E9ployer Nginx sous Docker sur Ubuntu 24.04
+  hosts: all
+  become: true
+  tasks:
+    - name: Tirer l'image officielle de Nginx
+      docker_image:
+        name: nginx
+        tag: latest
+        source: pull
+
+    - name: Lancer le container Nginx
+      docker_container:
+        name: nginx
+        image: nginx:latest
+        state: started
+        restart_policy: always
+        published_ports:
+          - "80:80"
