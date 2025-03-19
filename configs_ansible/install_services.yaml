@@ -1,0 +1,209 @@
+---
+- name: Déployer Traefik avec SSL local, Authelia et Nginx
+  hosts: all
+  become: true
+
+  vars:
+    fqdn: "monentreprise.com"
+    subdomain: "traefik.monentreprise.com"
+    authelia_domain: "authelia.monentreprise.com"
+    web_domain: "www.monentreprise.com"
+    traefik_path: "/opt/traefik"
+    authelia_path: "/opt/authelia"
+    ssl_path: "/etc/ssl/monentreprise"
+    ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
+
+  tasks:
+
+    - name: Créer les dossiers nécessaires
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ ssl_path }}"
+        - "{{ traefik_path }}"
+        - "{{ authelia_path }}"
+
+    - name: Copier les certificats SSL
+      copy:
+        src: "../configs_services/cert/{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: '{{ item.mode }}'
+      loop:
+        - { src: "monentreprise.crt", dest: "{{ ssl_path }}/monentreprise.crt", mode: '0644' }
+        - { src: "monentreprise.key", dest: "{{ ssl_path }}/monentreprise.key", mode: '0600' }
+        - { src: "rootCA.pem", dest: "{{ ca_cert_path }}", mode: '0644' }
+
+    - name: Mettre à jour les certificats
+      command: update-ca-certificates
+
+    - name: Configurer Authelia
+      copy:
+        dest: "{{ authelia_path }}/configuration.yml"
+        mode: '0644'
+        content: |
+          theme: dark
+
+          identity_validation:
+            reset_password:
+              jwt_secret: "a_very_secret_key"
+
+          authentication_backend:
+            file:
+              path: /config/users.yml
+
+          session:
+            name: authelia_session
+            secret: "a_session_secret_key"
+            expiration: 3600
+            inactivity: 300
+            cookies:
+              - domain: "{{ fqdn }}"
+                authelia_url: "https://{{ authelia_domain }}"
+                default_redirection_url: "https://{{ web_domain }}"
+
+          storage:
+            local:
+              path: /config/db.sqlite3
+            encryption_key: "a_storage_secret_key"
+
+          notifier:
+            filesystem:
+              filename: /config/notification.txt
+
+          access_control:
+            default_policy: one_factor
+            rules:
+              - domain: "{{ web_domain }}"
+                policy: one_factor
+              - domain: "{{ subdomain }}"
+                policy: one_factor
+
+    - name: Copier le fichier `users.yml`
+      copy:
+        dest: "{{ authelia_path }}/users.yml"
+        mode: '0644'
+        content: |
+          users:
+            admin:
+              password: "$2y$10$4QYng04Dolgi0zw46XsISe/g1Ld9LZ7Bw86uikielYBDxX0IJoBuO"
+              displayname: "Admin"
+              groups:
+                - admins
+
+    - name: Configurer Traefik
+      copy:
+        dest: "{{ traefik_path }}/traefik.yml"
+        mode: '0644'
+        content: |
+          entryPoints:
+            web:
+              address: ":80"
+            websecure:
+              address: ":443"
+
+          providers:
+            docker:
+              exposedByDefault: false
+
+          api:
+            dashboard: true
+            insecure: true
+
+          tls:
+            certificates:
+              - certFile: "{{ ssl_path }}/monentreprise.crt"
+                keyFile: "{{ ssl_path }}/monentreprise.key"
+
+    - name: Configurer Docker Compose
+      copy:
+        dest: "{{ traefik_path }}/docker-compose.yml"
+        mode: '0644'
+        content: |
+          services:
+            authelia:
+              image: authelia/authelia
+              container_name: authelia
+              networks:
+                - web
+              volumes:
+                - "{{ authelia_path }}:/config"
+              environment:
+                - TZ=Europe/Paris
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
+                - "traefik.http.routers.authelia.entrypoints=websecure"
+                - "traefik.http.routers.authelia.tls=true"
+                - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+                - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+                - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+
+            traefik:
+              image: traefik:latest
+              container_name: traefik
+              restart: always
+              networks:
+                - web
+              ports:
+                - "443:443"
+                - "80:80"
+              volumes:
+                - "{{ traefik_path }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+                - "/etc/ssl/monentreprise:/etc/traefik/certs"
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.traefik.rule=Host(`{{ subdomain }}`)"
+                - "traefik.http.routers.traefik.entrypoints=websecure"
+                - "traefik.http.routers.traefik.tls=true"
+                - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+                - "traefik.http.routers.traefik.middlewares=authelia@docker"
+
+            www:
+              image: nginx:latest
+              container_name: www
+              networks:
+                - web
+              volumes:
+                - "{{ traefik_path }}/default.conf:/etc/nginx/conf.d/default.conf"
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.www.rule=Host(`{{ web_domain }}`)"
+                - "traefik.http.routers.www.entrypoints=websecure"
+                - "traefik.http.routers.www.tls=true"
+                - "traefik.http.routers.www.middlewares=authelia@docker"
+
+          networks:
+            web:
+              external: true
+
+    - name: Configurer Nginx default.conf
+      copy:
+        dest: "{{ traefik_path }}/default.conf"
+        mode: '0644'
+        content: |
+          server {
+            listen 80;
+            server_name {{ web_domain }};
+
+            location / {
+              root /usr/share/nginx/html;
+              index index.html;
+            }
+          }
+
+    - name: Créer le réseau Docker 'web'
+      command: docker network create web
+      ignore_errors: yes
+
+    - name: Démarrer Docker Compose
+      command: docker compose up -d
+      args:
+        chdir: "{{ traefik_path }}"
+
+    - name: Ajouter domaines au fichier hosts
+      lineinfile:
+        path: /etc/hosts
+        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }}"

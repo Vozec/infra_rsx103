@@ -20,10 +20,14 @@ Vagrant.configure("2") do |config|
       sudo systemctl disable systemd-resolved
 
       # Ajout des entrées locales dans la configuration de dnsmasq
-      sudo bash -c 'echo "address=/prometheus.monitoring.local/192.168.30.101" >> /etc/dnsmasq.conf'
-      sudo bash -c 'echo "address=/grafana.monitoring.local/192.168.30.101" >> /etc/dnsmasq.conf'
-      sudo bash -c 'echo "address=/alertmanager.monitoring.local/192.168.30.101" >> /etc/dnsmasq.conf'
-      sudo bash -c 'echo "address=/web.services.local/192.168.30.102" >> /etc/dnsmasq.conf'
+      sudo bash -c 'echo "address=/prometheus.monentreprise.local/192.168.30.101" >> /etc/dnsmasq.conf'
+      sudo bash -c 'echo "address=/grafana.monentreprise.local/192.168.30.101" >> /etc/dnsmasq.conf'
+      sudo bash -c 'echo "address=/alertmanager.monentreprise.local/192.168.30.101" >> /etc/dnsmasq.conf'
+
+      sudo bash -c 'echo "address=/www.monentreprise.com/192.168.30.102" >> /etc/dnsmasq.conf'
+      sudo bash -c 'echo "address=/traefik.monentreprise.com/192.168.30.102" >> /etc/dnsmasq.conf'
+      sudo bash -c 'echo "address=/authelia.monentreprise.com/192.168.30.102" >> /etc/dnsmasq.conf'
+      
       sudo bash -c 'echo "address=/firewall.local/192.168.30.103" >> /etc/dnsmasq.conf'
 
       # Ajout de 8.8.8.8 comme serveur DNS de secours
@@ -80,9 +84,9 @@ Vagrant.configure("2") do |config|
     vm2.vm.provision "ansible" do |ansible|
       ansible.playbook = "configs_ansible/install_docker.yaml"
       ansible.verbose = "v"
-    end    
+    end
     vm2.vm.provision "ansible" do |ansible|
-      ansible.playbook = "configs_ansible/install_nginx.yaml"
+      ansible.playbook = "configs_ansible/install_services.yaml"
       ansible.verbose = "v"
     end
     vm2.vm.provision "shell", inline: <<-SHELL
@@ -109,9 +113,10 @@ Vagrant.configure("2") do |config|
       # Configurer le NAT pour masquer les adresses priv
       sudo iptables -t nat -A POSTROUTING -o enp0s8 -j MASQUERADE
 
-      # Autoriser uniquement VM4 à passer par VM3 pour aller sur le réseau privé (port 80 et 22)
+      # Autoriser uniquement VM4 à passer par VM3 pour aller sur le réseau privé
       sudo iptables -F
       sudo iptables -A FORWARD -s 192.168.40.104 -d 192.168.30.0/24 -p tcp --dport 80 -j ACCEPT
+      sudo iptables -A FORWARD -s 192.168.40.104 -d 192.168.30.0/24 -p tcp --dport 443 -j ACCEPT
       sudo iptables -A FORWARD -s 192.168.40.104 -d 192.168.30.0/24 -p tcp --dport 53 -j ACCEPT
       sudo iptables -A FORWARD -s 192.168.40.104 -d 192.168.30.0/24 -p tcp --dport 22 -j ACCEPT
       sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -j REJECT
@@ -156,7 +161,6 @@ Vagrant.configure("2") do |config|
       sudo apt-get update -y --fix-missing
       sudo apt-get install -y curl nmap
       sudo ip route add 192.168.30.0/24 via 192.168.40.103
-
     SHELL
   end
 
