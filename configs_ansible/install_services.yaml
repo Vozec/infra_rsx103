@@ -10,6 +10,8 @@
     web_domain: "www.monentreprise.com"
     traefik_path: "/opt/traefik"
     authelia_path: "/opt/authelia"
+    gitlab_domain: "gitlab.monentreprise.com"
+    gitlab_path: "/opt/gitlab"
     ssl_path: "/etc/ssl/monentreprise"
     ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
 
@@ -24,6 +26,17 @@
         - "{{ ssl_path }}"
         - "{{ traefik_path }}"
         - "{{ authelia_path }}"
+        - "{{ gitlab_path }}"
+
+    - name: Créer les sous-dossiers persistants de GitLab
+      file:
+        path: "{{ gitlab_path }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - config
+        - logs
+        - data
 
     - name: Copier les certificats SSL
       copy:
@@ -175,9 +188,46 @@
                 - "traefik.http.routers.www.tls=true"
                 - "traefik.http.routers.www.middlewares=authelia@docker"
 
+            gitlab:
+              image: gitlab/gitlab-ce:latest
+              container_name: gitlab
+              hostname: "{{ gitlab_domain }}"
+              restart: always
+              environment:
+                GITLAB_OMNIBUS_CONFIG: |
+                  external_url "http://{{ gitlab_domain }}"
+                  nginx['redirect_http_to_https'] = false
+                  nginx['listen_https'] = false
+                  nginx['ssl_certificate'] = nil
+                  nginx['ssl_certificate_key'] = nil
+                  gitlab_rails['gitlab_signup_enabled'] = true
+                  gitlab_rails['gitlab_email_confirmation'] = false
+                  gitlab_rails['gitlab_email_enabled'] = false
+                  gitlab_rails['gitlab_default_can_create_group'] = true
+                  gitlab_rails['gitlab_default_projects_features_visibility_level'] = 'private'
+                  gitlab_rails['gitlab_user_default_internal_regex'] = ''
+                  gitlab_rails['gitlab_user_default_external'] = false
+                  gitlab_rails['gitlab_require_two_factor_authentication'] = false
+                  gitlab_rails['gitlab_new_user_signups_cap'] = false
+                  gitlab_rails['gitlab_user_confirmable'] = false
+                  gitlab_rails['gitlab_user_approval_required'] = false
+              volumes:
+                - "{{ gitlab_path }}/config:/etc/gitlab"
+                - "{{ gitlab_path }}/logs:/var/log/gitlab"
+                - "{{ gitlab_path }}/data:/var/opt/gitlab"
+                - "{{ ssl_path }}:/etc/gitlab/ssl:ro"
+              networks:
+                - web
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.gitlab.rule=Host(`{{ gitlab_domain }}`)"
+                - "traefik.http.routers.gitlab.entrypoints=websecure"
+                - "traefik.http.routers.gitlab.tls=true"
+                - "traefik.http.services.gitlab.loadbalancer.server.port=80"
+                - "traefik.http.routers.gitlab.middlewares=authelia-auth@docker"
+
           networks:
             web:
-              external: true
 
     - name: Configurer Nginx default.conf
       copy:
@@ -194,10 +244,6 @@
             }
           }
 
-    - name: Créer le réseau Docker 'web'
-      command: docker network create web
-      ignore_errors: yes
-
     - name: Démarrer Docker Compose
       command: docker compose up -d
       args:
@@ -206,4 +252,4 @@
     - name: Ajouter domaines au fichier hosts
       lineinfile:
         path: /etc/hosts
-        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }}"
+        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }} {{ gitlab_domain }}"
