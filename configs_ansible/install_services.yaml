@@ -1,22 +1,45 @@
----
 - name: Déployer Traefik avec SSL local, Authelia et Nginx
-  hosts: all
+  hosts: localhost
   become: true
 
   vars:
-    fqdn: "monentreprise.com"
-    subdomain: "traefik.monentreprise.com"
-    authelia_domain: "authelia.monentreprise.com"
-    web_domain: "www.monentreprise.com"
+    extension: "com"
+    entreprise: "monentreprise"
+    fqdn: "{{ entreprise }}.{{ extension }}"
+    subdomain: "traefik.{{ entreprise }}.{{ extension }}"
+    authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
+    web_domain: "www.{{ entreprise }}.{{ extension }}"
+    lldap_domain : "lldap.{{ entreprise }}.{{ extension }}"
+    openvpn_domain: "openvpn.{{ entreprise }}.{{ extension }}"
+    gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
+
     traefik_path: "/opt/traefik"
     authelia_path: "/opt/authelia"
-    gitlab_domain: "gitlab.monentreprise.com"
-    gitlab_path: "/opt/gitlab"
-    ssl_path: "/etc/ssl/monentreprise"
+    openvpn_path: "/opt/openvpn"
+    ssl_path: "/etc/ssl/{{ entreprise }}"
     ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
 
-  tasks:
+    authelia_identity_jwt: "a_very_secret_key"
+    authelia_session_jwt: "a_very_secret_key"
+    authelia_storage_jwt: "a_storage_secret_key"
 
+    lldap_jwt: "SuperSecretKeyToReplace"
+    lldap_admin: "admin"
+    lldap_pass: "password"
+    lldap_host: "lldap"
+    lldap_port: "389"
+
+  tasks:
+    - name: Supprimer complètement les répertoires de données
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ openvpn_path }}"
+        - "{{ authelia_path }}"
+        - "{{ traefik_path }}"
+      ignore_errors: true
+      
     - name: Créer les dossiers nécessaires
       file:
         path: "{{ item }}"
@@ -26,26 +49,44 @@
         - "{{ ssl_path }}"
         - "{{ traefik_path }}"
         - "{{ authelia_path }}"
-        - "{{ gitlab_path }}"
+        - "{{ openvpn_path }}"
 
-    - name: Créer les sous-dossiers persistants de GitLab
-      file:
-        path: "{{ gitlab_path }}/{{ item }}"
-        state: directory
-        mode: '0755'
-      loop:
-        - config
-        - logs
-        - data
+    - name: Télécharger et exécuter le script d'installation de Docker
+      ansible.builtin.shell: |
+        curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+
+    - name: Vérifier que Docker est bien installé
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+      ignore_errors: true
+
+    # Nettoyage complet de l'environnement
+    - name: Arrêter et supprimer tous les conteneurs
+      shell: |
+        docker rm -f $(docker ps -a -q) || true
+      ignore_errors: true
+
+    - name: Supprimer tous les volumes Docker
+      shell: |
+        docker volume rm $(docker volume ls -q) || true
+      ignore_errors: true
+
+    - name: S'assurer que le réseau Docker "web" existe
+      shell: docker network inspect web || docker network create web
+      register: web_network_result
+      changed_when: "'Created' in web_network_result.stdout"
 
     - name: Copier les certificats SSL
       copy:
-        src: "../configs_services/cert/{{ item.src }}"
+        src: "cert/{{ item.src }}"
         dest: "{{ item.dest }}"
         mode: '{{ item.mode }}'
       loop:
-        - { src: "monentreprise.crt", dest: "{{ ssl_path }}/monentreprise.crt", mode: '0644' }
-        - { src: "monentreprise.key", dest: "{{ ssl_path }}/monentreprise.key", mode: '0600' }
+        - { src: "{{ entreprise }}.crt", dest: "{{ ssl_path }}/{{ entreprise }}.crt", mode: '0644' }
+        - { src: "{{ entreprise }}.key", dest: "{{ ssl_path }}/{{ entreprise }}.key", mode: '0600' }
         - { src: "rootCA.pem", dest: "{{ ca_cert_path }}", mode: '0644' }
 
     - name: Mettre à jour les certificats
@@ -60,15 +101,33 @@
 
           identity_validation:
             reset_password:
-              jwt_secret: "a_very_secret_key"
+              jwt_secret: "{{ authelia_identity_jwt }}"
 
+          # LOCAL AUTH 
+          # authentication_backend:
+          #   file:
+          #     path: /config/users.yml
+
+          # AUTH With LLDAP 
           authentication_backend:
-            file:
-              path: /config/users.yml
+            ldap:
+              implementation: custom
+              address: ldap://{{ lldap_host }}:{{ lldap_port }}
+              base_dn: dc={{ entreprise }},dc={{ extension }}
+              additional_users_dn: ""
+              additional_groups_dn: ou=groups
+              user: cn={{ lldap_admin }},dc={{ entreprise }},dc={{ extension }}
+              password: {{ lldap_pass }}
+              attributes:
+                username: uid
+                group_name: cn
+              users_filter: "(&({username_attribute}={input})(objectClass=person))"
+              # groups_filter: "(&(member={dn})(objectClass=groupOfNames))"
+              groups_filter: "(&(memberUid={username})(objectClass=posixGroup))"
 
           session:
             name: authelia_session
-            secret: "a_session_secret_key"
+            secret: "{{ authelia_session_jwt }}"
             expiration: 3600
             inactivity: 300
             cookies:
@@ -79,31 +138,30 @@
           storage:
             local:
               path: /config/db.sqlite3
-            encryption_key: "a_storage_secret_key"
+            encryption_key: "{{ authelia_storage_jwt }}"
 
           notifier:
             filesystem:
               filename: /config/notification.txt
 
           access_control:
-            default_policy: one_factor
+            default_policy: deny
             rules:
               - domain: "{{ web_domain }}"
                 policy: one_factor
               - domain: "{{ subdomain }}"
+                subject:
+                  - "group:admins"
+                policy: one_factor
+              - domain: "{{ gitlab_domain }}"
+                subject:
+                  - "group:gitlab"
+                policy: one_factor
+              - domain: "{{ lldap_domain }}"
+                subject:
+                  - "group:admins"
                 policy: one_factor
 
-    - name: Copier le fichier `users.yml`
-      copy:
-        dest: "{{ authelia_path }}/users.yml"
-        mode: '0644'
-        content: |
-          users:
-            admin:
-              password: "$2y$10$4QYng04Dolgi0zw46XsISe/g1Ld9LZ7Bw86uikielYBDxX0IJoBuO"
-              displayname: "Admin"
-              groups:
-                - admins
 
     - name: Configurer Traefik
       copy:
@@ -126,8 +184,8 @@
 
           tls:
             certificates:
-              - certFile: "{{ ssl_path }}/monentreprise.crt"
-                keyFile: "{{ ssl_path }}/monentreprise.key"
+              - certFile: "{{ ssl_path }}/{{ entreprise }}.crt"
+                keyFile: "{{ ssl_path }}/{{ entreprise }}.key"
 
     - name: Configurer Docker Compose
       copy:
@@ -135,23 +193,51 @@
         mode: '0644'
         content: |
           services:
-            authelia:
-              image: authelia/authelia
-              container_name: authelia
+            lldap:
+              image: osixia/openldap:1.5.0
+              container_name: lldap
+              restart: unless-stopped
               networks:
                 - web
-              volumes:
-                - "{{ authelia_path }}:/config"
               environment:
-                - TZ=Europe/Paris
+                - LDAP_ORGANISATION={{ entreprise }}
+                - LDAP_DOMAIN={{ entreprise }}.{{ extension }}
+                - LDAP_ADMIN_PASSWORD={{ lldap_pass }}
+                - LDAP_TLS=false  # désactivé car on passe par Traefik en HTTPS
+              ports:
+                - "389:389"  # 389 standard
+              volumes:
+                - lldap_data:/var/lib/ldap
+                - lldap_config:/etc/ldap/slapd.d
+              healthcheck:
+                test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-D", "cn=admin,dc={{ entreprise }},dc={{ extension }}", "-w", "{{ lldap_pass }}", "-b", "dc={{ entreprise }},dc={{ extension }}"]
+                interval: 10s
+                timeout: 5s
+                retries: 10
+
+            ldap-user-manager:
+              image: wheelybird/ldap-user-manager:v1.11
+              container_name: ldap-user-manager
+              restart: unless-stopped
+              environment:
+                - SERVER_HOSTNAME={{ lldap_domain }}
+                - LDAP_URI=ldap://lldap
+                - LDAP_BASE_DN=dc=monentreprise,dc=com
+                - LDAP_ADMIN_BIND_DN=cn=admin,dc=monentreprise,dc=com
+                - LDAP_ADMIN_BIND_PWD=password
+                - LDAP_ADMINS_GROUP=admins
+                - NO_HTTPS=true
+                - LDAP_IGNORE_CERT_ERRORS=true
+                - LDAP_REQUIRE_STARTTLS=false
+              networks:
+                - web
               labels:
                 - "traefik.enable=true"
-                - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
-                - "traefik.http.routers.authelia.entrypoints=websecure"
-                - "traefik.http.routers.authelia.tls=true"
-                - "traefik.http.services.authelia.loadbalancer.server.port=9091"
-                - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
-                - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+                - "traefik.http.routers.lldap.rule=Host(`{{ lldap_domain }}`)"
+                - "traefik.http.routers.lldap.entrypoints=websecure"
+                - "traefik.http.routers.lldap.tls=true"
+                - "traefik.http.services.lldap.loadbalancer.server.port=80"
+                - "traefik.http.routers.lldap.middlewares=authelia@docker"
 
             traefik:
               image: traefik:latest
@@ -188,34 +274,94 @@
                 - "traefik.http.routers.www.tls=true"
                 - "traefik.http.routers.www.middlewares=authelia@docker"
 
+            # debug-ubuntu:
+            #   image: ubuntu:latest
+            #   container_name: debug-ubuntu
+            #   restart: always
+            #   networks:
+            #     - web
+            #   tty: true  # Permet d'avoir un terminal interactif
+            #   command: ["/bin/bash"]
+            #   environment:
+            #     - DEBIAN_FRONTEND=noninteractive
+            #   volumes:
+            #     - /var/run/docker.sock:/var/run/docker.sock
+
+            authelia:
+              image: authelia/authelia
+              container_name: authelia
+              networks:
+                - web
+              volumes:
+                - "{{ authelia_path }}:/config"
+              environment:
+                - TZ=Europe/Paris
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
+                - "traefik.http.routers.authelia.entrypoints=websecure"
+                - "traefik.http.routers.authelia.tls=true"
+                - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+                - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+                - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+              depends_on:
+                lldap:
+                  condition: service_healthy
+
             gitlab:
-              image: gitlab/gitlab-ce:latest
+              image: gitlab/gitlab-ee:latest
               container_name: gitlab
-              hostname: "{{ gitlab_domain }}"
-              restart: always
+              restart: unless-stopped
+              hostname: "{{ fqdn }}"
               environment:
                 GITLAB_OMNIBUS_CONFIG: |
-                  external_url "http://{{ gitlab_domain }}"
-                  nginx['redirect_http_to_https'] = false
+                  external_url 'https://{{ gitlab_domain }}'
+                  nginx['listen_port'] = 80
                   nginx['listen_https'] = false
-                  nginx['ssl_certificate'] = nil
-                  nginx['ssl_certificate_key'] = nil
-                  gitlab_rails['gitlab_signup_enabled'] = true
-                  gitlab_rails['gitlab_email_confirmation'] = false
-                  gitlab_rails['gitlab_email_enabled'] = false
-                  gitlab_rails['gitlab_default_can_create_group'] = true
-                  gitlab_rails['gitlab_default_projects_features_visibility_level'] = 'private'
-                  gitlab_rails['gitlab_user_default_internal_regex'] = ''
-                  gitlab_rails['gitlab_user_default_external'] = false
-                  gitlab_rails['gitlab_require_two_factor_authentication'] = false
-                  gitlab_rails['gitlab_new_user_signups_cap'] = false
-                  gitlab_rails['gitlab_user_confirmable'] = false
-                  gitlab_rails['gitlab_user_approval_required'] = false
+
+                  gitlab_rails['ldap_enabled'] = true
+                  gitlab_rails['ldap_servers'] = {
+                    'main' => {
+                      'label' => 'LDAP',
+                      'host' => '{{ lldap_host }}',
+                      'port' => {{ lldap_port }},
+                      'uid' => 'uid',
+                      'bind_dn' => 'cn={{ lldap_admin }},dc={{ entreprise }},dc={{ extension }}',
+                      'password' => '{{ lldap_pass }}',
+                      'encryption' => 'plain',
+                      'verify_certificates' => false,
+                      'active_directory' => false,
+                      'allow_username_or_email_login' => true,
+                      'base' => 'dc={{ entreprise }},dc={{ extension }}',
+                      'group_base' => 'ou=groups,dc={{ entreprise }},dc={{ extension }}',
+                      'user_filter' => '',
+                      'group_filter' => '',
+                      'attributes' => {
+                        'username' => 'uid',
+                        'email' => 'mail',
+                        'name' => 'cn',
+                        'first_name' => 'givenName',
+                        'last_name' => 'sn'
+                      }
+                    }
+                  }
+
+                  gitlab_rails['ldap_sync_worker_cron'] = "0 * * * *"
+                  gitlab_rails['ldap_group_sync_enabled'] = true
+
+                  gitlab_rails['initial_root_password'] = '{{ lldap_pass }}'
+
+                  gitlab_rails['ldap_create_admin'] = true
+                  gitlab_rails['admin_username'] = '{{ lldap_admin }}'
+
+
+              ports:
+                - "8929:80"
+                - "2289:22"
               volumes:
-                - "{{ gitlab_path }}/config:/etc/gitlab"
-                - "{{ gitlab_path }}/logs:/var/log/gitlab"
-                - "{{ gitlab_path }}/data:/var/opt/gitlab"
-                - "{{ ssl_path }}:/etc/gitlab/ssl:ro"
+                - gitlab_config:/etc/gitlab
+                - gitlab_logs:/var/log/gitlab
+                - gitlab_data:/var/opt/gitlab
               networks:
                 - web
               labels:
@@ -223,11 +369,46 @@
                 - "traefik.http.routers.gitlab.rule=Host(`{{ gitlab_domain }}`)"
                 - "traefik.http.routers.gitlab.entrypoints=websecure"
                 - "traefik.http.routers.gitlab.tls=true"
+                - "traefik.http.routers.gitlab.middlewares=authelia@docker"
                 - "traefik.http.services.gitlab.loadbalancer.server.port=80"
-                - "traefik.http.routers.gitlab.middlewares=authelia-auth@docker"
+            
+            openvpn:
+              image: openvpn/openvpn-as
+              container_name: openvpn
+              cap_add:
+                - NET_ADMIN
+              ports:
+                - "1194:1194/udp"
+                - "943:943/tcp"   # Interface Web OpenVPN
+              volumes:
+                - ./openvpn_data:/etc/openvpn
+              environment:
+                - LDAP_ENABLED=true
+                - LDAP_SERVER={{ lldap_host }}
+                - LDAP_PORT={{ lldap_port }}
+                - LDAP_BIND_DN=uid={{ lldap_admin }},ou=people,dc={{ entreprise }},dc={{ extension }} 
+                - LDAP_BIND_PASS={{ lldap_pass }}
+                - LDAP_BASE_DN=dc={{ entreprise }},dc={{ extension }} 
+                - LDAP_FILTER=(objectClass=person)
+                - OVPN_K8S_CLUSTER=0
+              restart: unless-stopped
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.openvpn.rule=Host(`{{ openvpn_domain }}`)"
+                - "traefik.http.routers.openvpn.entrypoints=websecure"
+                - "traefik.http.routers.openvpn.tls=true"
+                - "traefik.http.services.openvpn.loadbalancer.server.port=943"
 
           networks:
             web:
+              driver: bridge
+
+          volumes:
+            lldap_data:
+            lldap_config:
+            gitlab_config:
+            gitlab_logs:
+            gitlab_data:
 
     - name: Configurer Nginx default.conf
       copy:
@@ -244,12 +425,78 @@
             }
           }
 
-    - name: Démarrer Docker Compose
+    - name: Lancer les conteneurs
       command: docker compose up -d
       args:
         chdir: "{{ traefik_path }}"
 
+    - name: Créer le dossier bootstrap pour LDIF
+      file:
+        path: "{{ traefik_path }}/bootstrap"
+        state: directory
+        mode: '0755'
+
+    - name: Créer le fichier LDIF pour utilisateur admin + groupes (posixGroup)
+      copy:
+        dest: /opt/traefik/bootstrap/users.ldif
+        mode: '0644'
+        content: |
+          dn: ou=people,dc={{ entreprise }},dc={{ extension }}
+          objectClass: organizationalUnit
+          ou: people
+
+          dn: uid={{ lldap_admin }},ou=people,dc={{ entreprise }},dc={{ extension }}
+          objectClass: inetOrgPerson
+          uid: {{ lldap_admin }}
+          sn: Admin
+          cn: {{ lldap_admin }}
+          userPassword: {{ lldap_pass }}
+
+          dn: ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: organizationalUnit
+          ou: groups
+
+          dn: cn=admins,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: admins
+          gidNumber: 10000
+          memberUid: {{ lldap_admin }}
+
+          dn: cn=gitlab,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: gitlab
+          gidNumber: 10001
+          memberUid: {{ lldap_admin }}
+
+    - name: Attendre que le port LDAP soit disponible
+      wait_for:
+        host: "0.0.0.0"
+        port: 389
+        delay: 5
+        timeout: 30
+
+    - name: Connecter le conteneur lldap au réseau web
+      shell: docker network connect web lldap
+      register: connect_lldap_to_web
+      failed_when: "'already exists in network' not in connect_lldap_to_web.stderr and connect_lldap_to_web.rc != 0"
+      changed_when: "'already exists in network' not in connect_lldap_to_web.stderr"
+
+    - name: Injecter un LDIF pour l'utilisateur admin
+      shell: |
+        docker run --rm -i \
+          --network=web \
+          -v /opt/traefik/bootstrap:/ldif \
+          debian:bookworm-slim \
+          bash -c "apt update >/dev/null && apt install -y ldap-utils >/dev/null && ldapadd -x \
+          -H ldap://lldap:389 \
+          -D 'cn=admin,dc=monentreprise,dc=com' \
+          -w password \
+          -f /ldif/users.ldif"
+      register: ldapadd_result
+      changed_when: "'adding new entry' in ldapadd_result.stdout"
+
     - name: Ajouter domaines au fichier hosts
       lineinfile:
         path: /etc/hosts
-        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }} {{ gitlab_domain }}"
+        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }} {{ lldap_domain }} {{ openvpn_domain }} {{ gitlab_domain }}"
+        state: present
