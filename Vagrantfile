@@ -5,7 +5,6 @@ Vagrant.configure("2") do |config|
   config.vm.define "vm0" do |vm0|
     vm0.vm.hostname = "dns"
     vm0.vm.network "private_network", ip: "192.168.30.100"  # Réseau privé
-    vm0.vm.network "private_network", ip: "192.168.40.100"  # Réseau publique
     vm0.vm.provider "virtualbox" do |vb|
       vb.memory = "1024"
       vb.cpus = 1
@@ -145,7 +144,7 @@ Vagrant.configure("2") do |config|
       sudo ip route add 192.168.30.0/24 via 192.168.40.103
 
       # Set custom DNS
-      echo "nameserver 192.168.40.100" | sudo tee /etc/resolv.conf > /dev/null
+      echo "nameserver 192.168.30.100" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
