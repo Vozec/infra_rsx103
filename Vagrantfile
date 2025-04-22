@@ -3,7 +3,7 @@ Vagrant.configure("2") do |config|
 
   # DNS - VM0 - Réseau 1 & 2 
   config.vm.define "vm0" do |vm0|
-    vm0.vm.hostname = "monitoring"
+    vm0.vm.hostname = "dns"
     vm0.vm.network "private_network", ip: "192.168.30.100"  # Réseau privé
     vm0.vm.network "private_network", ip: "192.168.40.100"  # Réseau publique
     vm0.vm.provider "virtualbox" do |vb|
