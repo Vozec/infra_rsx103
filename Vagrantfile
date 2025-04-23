@@ -4,21 +4,22 @@ Vagrant.configure("2") do |config|
   # VM0 - Machine administrateur
   config.vm.define "vm0" do |vm0|
     vm0.vm.hostname = "admin"
-    vm0.vm.network "private_network", ip: "192.168.40.10", netmask: "255.255.255.240"
+    vm0.vm.network "private_network", ip: "192.168.40.10"
     vm0.vm.provider "virtualbox" do |vb|
       vb.memory = "1024"
       vb.cpus = 1
     end
     vm0.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.20.0/24 via 192.168.40.30
-      echo "nameserver 192.168.20.20" | sudo tee /etc/resolv.conf > /dev/null
+      sudo ip route add 192.168.30.0/24 via 192.168.40.30
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
   # VM1 -- OpenVPN administration
   config.vm.define "vm1" do |vm1|
     vm1.vm.hostname = "openvpn-admin"
-    vm1.vm.network "private_network", ip: "192.168.40.20", netmask: "255.255.255.240"
+    vm1.vm.network "private_network", ip: "192.168.40.20"
     vm1.vm.provider "virtualbox" do |vb|
       vb.memory = "1024"
       vb.cpus = 1
@@ -47,7 +48,7 @@ Vagrant.configure("2") do |config|
     end
     vm3.vm.provision "shell", path: "./configs_firewalls/setup_internal.sh"
     vm3.vm.provision "shell", inline: <<-SHELL
-      echo "nameserver 192.168.20.20" | sudo tee /etc/resolv.conf > /dev/null
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
@@ -62,7 +63,7 @@ Vagrant.configure("2") do |config|
     end
     vm4.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
-      echo "nameserver 192.168.20.20" | sudo tee /etc/resolv.conf > /dev/null
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
@@ -76,7 +77,8 @@ Vagrant.configure("2") do |config|
     end
     vm5.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
-      echo "nameserver 192.168.20.20" | sudo tee /etc/resolv.conf > /dev/null
+      sudo ip route add 192.168.40.0/24 via 192.168.20.30
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
@@ -88,11 +90,10 @@ Vagrant.configure("2") do |config|
       vb.memory = "1024"
       vb.cpus = 1
     end
+    vm6.vm.provision "shell", path: "./configs_services/setup_dns.sh"
     vm6.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
-    vm6.vm.provision "shell", path: "./configs_services/setup_dns.sh"
   end
 
   # VM7 - Firewall DMZ <-> Public
@@ -106,6 +107,7 @@ Vagrant.configure("2") do |config|
     end
     vm7.vm.provision "shell", path: "./configs_firewalls/setup_front.sh"
     vm7.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.40.0/24 via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -119,11 +121,12 @@ Vagrant.configure("2") do |config|
       vb.cpus = 1
     end
     vm8.vm.provision "shell", inline: <<-SHELL
-      sudo ip route add 192.168.20.0/24 via 192.168.20.50
+      sudo ip route add 192.168.20.0/24 via 192.168.10.50
+      sudo ip route add 192.168.40.0/24 via 192.168.10.50
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
     vm8.vm.provision "shell", inline: <<-SHELL
-      sudo apt-get update -y --fix-missing &&  apt-get install -y curl nmap
+      sudo apt-get update -y --fix-missing &&  apt-get install -y curl nmap inetutils-traceroute
     SHELL
   end
 
