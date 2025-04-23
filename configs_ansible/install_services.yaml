@@ -11,11 +11,13 @@
     web_domain: "www.{{ entreprise }}.{{ extension }}"
     lldap_domain : "lldap.{{ entreprise }}.{{ extension }}"
     openvpn_domain: "openvpn.{{ entreprise }}.{{ extension }}"
+    openvpn_admin_domain: "openvpn-admin.{{ entreprise }}.{{ extension }}"
     gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
 
     traefik_path: "/opt/traefik"
     authelia_path: "/opt/authelia"
     openvpn_path: "/opt/openvpn"
+    openvpn_admin_path: "/opt/openvpn-admin"
     ssl_path: "/etc/ssl/{{ entreprise }}"
     ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
 
@@ -36,6 +38,7 @@
         state: absent
       loop:
         - "{{ openvpn_path }}"
+        - "{{ openvpn_admin_path }}"
         - "{{ authelia_path }}"
         - "{{ traefik_path }}"
       ignore_errors: true
@@ -50,6 +53,7 @@
         - "{{ traefik_path }}"
         - "{{ authelia_path }}"
         - "{{ openvpn_path }}"
+        - "{{ openvpn_admin_path }}"
 
     - name: Télécharger et exécuter le script d'installation de Docker
       ansible.builtin.shell: |
@@ -372,32 +376,99 @@
                 - "traefik.http.routers.gitlab.middlewares=authelia@docker"
                 - "traefik.http.services.gitlab.loadbalancer.server.port=80"
             
+            # OpenVPN pour les utilisateurs (accès DMZ et réseau privé)
             openvpn:
-              image: openvpn/openvpn-as
+              image: wheelybird/openvpn-ldap-otp:v1.4
               container_name: openvpn
               cap_add:
                 - NET_ADMIN
               ports:
                 - "1194:1194/udp"
-                - "943:943/tcp"   # Interface Web OpenVPN
+                - "943:943/tcp"
               volumes:
-                - ./openvpn_data:/etc/openvpn
+                - "{{ openvpn_path }}:/etc/openvpn"
               environment:
-                - LDAP_ENABLED=true
-                - LDAP_SERVER={{ lldap_host }}
-                - LDAP_PORT={{ lldap_port }}
-                - LDAP_BIND_DN=uid={{ lldap_admin }},ou=people,dc={{ entreprise }},dc={{ extension }} 
-                - LDAP_BIND_PASS={{ lldap_pass }}
-                - LDAP_BASE_DN=dc={{ entreprise }},dc={{ extension }} 
-                - LDAP_FILTER=(objectClass=person)
-                - OVPN_K8S_CLUSTER=0
+                # Configuration du serveur OpenVPN
+                - OVPN_SERVER_CN={{ openvpn_domain }}
+                - OVPN_NETWORK=10.8.0.0/24
+                - OVPN_ROUTES=192.168.20.0/24,192.168.10.0/24
+                - OVPN_DNS_SERVERS=8.8.8.8,8.8.4.4
+                # Configuration LDAP
+                - OVPN_LDAP=true
+                - OVPN_LDAP_URL=ldap://{{ lldap_host }}:{{ lldap_port }}
+                - OVPN_LDAP_BIND_DN=cn={{ lldap_admin }},dc={{ entreprise }},dc={{ extension }}
+                - OVPN_LDAP_BIND_PASSWORD={{ lldap_pass }}
+                - OVPN_LDAP_SEARCH_BASE=ou=people,dc={{ entreprise }},dc={{ extension }}
+                - OVPN_LDAP_SEARCH_FILTER=(&(objectClass=person)(uid=%u))
+                # Configuration des groupes LDAP
+                - OVPN_LDAP_GROUP_MEMBER_ATTR=memberUid
+                - OVPN_LDAP_GROUP_MEMBER_ATTR_FORMAT=%u
+                - OVPN_LDAP_GROUP_SEARCH_BASE=ou=groups,dc={{ entreprise }},dc={{ extension }}
+                - OVPN_LDAP_GROUP_SEARCH_FILTER=(cn=VPN_INTERNE)
+                - OVPN_LDAP_TLS=false
+                # Mot de passe admin pour l'interface web
+                - OVPN_ADMIN_USERNAME={{ lldap_admin }}
+                - OVPN_ADMIN_PASSWORD={{ lldap_pass }}
+                # Autres paramètres
+                - EASYRSA_KEY_SIZE=2048
+                - DEBUG=true
               restart: unless-stopped
+              networks:
+                - web
               labels:
                 - "traefik.enable=true"
-                - "traefik.http.routers.openvpn.rule=Host(`{{ openvpn_domain }}`)"
+                - "traefik.http.routers.openvpn.rule=Host(`{{ openvpn_domain }}`)" 
                 - "traefik.http.routers.openvpn.entrypoints=websecure"
                 - "traefik.http.routers.openvpn.tls=true"
                 - "traefik.http.services.openvpn.loadbalancer.server.port=943"
+                - "traefik.http.routers.openvpn.middlewares=authelia@docker"
+            
+            # OpenVPN pour les administrateurs (accès réseau ADMIN)
+            openvpn-admin:
+              image: wheelybird/openvpn-ldap-otp:v1.4
+              container_name: openvpn-admin
+              cap_add:
+                - NET_ADMIN
+              ports:
+                - "1195:1194/udp"
+                - "944:943/tcp"
+              volumes:
+                - "{{ openvpn_admin_path }}:/etc/openvpn"
+              environment:
+                # Configuration du serveur OpenVPN
+                - OVPN_SERVER_CN={{ openvpn_admin_domain }}
+                - OVPN_NETWORK=10.9.0.0/24
+                - OVPN_ROUTES=192.168.40.0/24
+                - OVPN_DNS_SERVERS=8.8.8.8,8.8.4.4
+                # Configuration LDAP
+                - OVPN_LDAP=true
+                - OVPN_LDAP_URL=ldap://{{ lldap_host }}:{{ lldap_port }}
+                - OVPN_LDAP_BIND_DN=cn={{ lldap_admin }},dc={{ entreprise }},dc={{ extension }}
+                - OVPN_LDAP_BIND_PASSWORD={{ lldap_pass }}
+                - OVPN_LDAP_SEARCH_BASE=ou=people,dc={{ entreprise }},dc={{ extension }}
+                - OVPN_LDAP_SEARCH_FILTER=(&(objectClass=person)(uid=%u))
+                # Configuration des groupes LDAP - uniquement le groupe admins
+                - OVPN_LDAP_GROUP_MEMBER_ATTR=memberUid
+                - OVPN_LDAP_GROUP_MEMBER_ATTR_FORMAT=%u
+                - OVPN_LDAP_GROUP_SEARCH_BASE=ou=groups,dc={{ entreprise }},dc={{ extension }}
+                - OVPN_LDAP_GROUP_SEARCH_FILTER=(cn=VPN_ADMIN)
+                - OVPN_LDAP_TLS=false
+                # Mot de passe admin pour l'interface web
+                - OVPN_ADMIN_USERNAME={{ lldap_admin }}
+                - OVPN_ADMIN_PASSWORD={{ lldap_pass }}
+                # Autres paramètres
+                - EASYRSA_KEY_SIZE=2048
+                - DEBUG=true
+              restart: unless-stopped
+              networks:
+                - web
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.openvpn-admin.rule=Host(`{{ openvpn_admin_domain }}`)" 
+                - "traefik.http.routers.openvpn-admin.entrypoints=websecure"
+                - "traefik.http.routers.openvpn-admin.tls=true"
+                - "traefik.http.services.openvpn-admin.loadbalancer.server.port=943"
+                - "traefik.http.routers.openvpn-admin.middlewares=authelia@docker"
 
           networks:
             web:
@@ -468,6 +539,18 @@
           gidNumber: 10001
           memberUid: {{ lldap_admin }}
 
+          dn: cn=VPN_INTERNE,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: VPN_INTERNE
+          gidNumber: 10002
+          memberUid: {{ lldap_admin }}
+
+          dn: cn=VPN_ADMIN,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: VPN_ADMIN
+          gidNumber: 10003
+          memberUid: {{ lldap_admin }}
+
     - name: Attendre que le port LDAP soit disponible
       wait_for:
         host: "0.0.0.0"
@@ -498,5 +581,9 @@
     - name: Ajouter domaines au fichier hosts
       lineinfile:
         path: /etc/hosts
-        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }} {{ lldap_domain }} {{ openvpn_domain }} {{ gitlab_domain }}"
+        line: "127.0.0.1 {{ fqdn }} {{ subdomain }} {{ authelia_domain }} {{ web_domain }} {{ lldap_domain }} {{ openvpn_domain }} {{ openvpn_admin_domain }} {{ gitlab_domain }}"
         state: present
+
+    - name: Attendre que les conteneurs soient prêts
+      wait_for:
+        timeout: 30
