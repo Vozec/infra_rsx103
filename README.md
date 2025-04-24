@@ -19,22 +19,11 @@ vagrant provision vm2
 vagrant provision vm3
 ```
 
-## Configuration du Pare-feu
+## Récupération du mdp peertube
 
-### Isolation de VM1 et VM2
-- Seules les connexions provenant de VM3 sont autorisées vers VM1 et VM2.
-- Les règles suivantes sont appliquées :
-  - `ufw allow from 192.168.56.103 to any port 22`
-  - `ufw deny from any to 192.168.56.101`
-  - `ufw deny from any to 192.168.56.102`
-
-### Configuration de VM3 comme Passerelle
-- VM3 est configurée pour rediriger le trafic entre les réseaux public et privé.
-- Les commandes suivantes sont exécutées :
-  - `sysctl -w net.ipv4.ip_forward=1`
-  - `iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE`
-
-### Documentation de la configuration du pare-feu
-- La configuration du pare-feu est réalisée à l'aide des règles UFW et des commandes iptables.
-- Les règles UFW sont utilisées pour autoriser ou refuser les connexions entrantes et sortantes.
-- Les commandes iptables sont utilisées pour configurer le routage et le masquage des adresses IP.
+```bash
+vagrant ssh vm4 -c "docker compose -f /opt/traefik/docker-compose.yml logs peertube | grep -A1 root"
+WARN[0000] /opt/traefik/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion 
+peertube-1  | [www.monentreprise.com:443] 2025-04-24 16:04:29.486 info: Username: root
+peertube-1  | [www.monentreprise.com:443] 2025-04-24 16:04:29.486 info: User password: saquserusufejugi
+```

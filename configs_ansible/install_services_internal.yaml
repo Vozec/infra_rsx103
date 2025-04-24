@@ -9,7 +9,8 @@
     subdomain: "traefik.{{ entreprise }}.{{ extension }}"
     gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
     authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
-
+    web_domain: "www.{{ entreprise }}.{{ extension }}"
+    
     authelia_path: "/opt/authelia"
     authelia_identity_jwt: "a_very_secret_key"
     authelia_session_jwt: "a_very_secret_key"
@@ -17,8 +18,9 @@
     
     lldap_admin: "admin"
     lldap_pass: "password"
-    lldap_host: "lldap"
+    lldap_host: "192.168.40.10"
     lldap_port: "389"
+
 
   tasks:
     - name: Supprimer complètement les répertoires de données
@@ -132,15 +134,9 @@
                 - "{{ authelia_path }}:/config"
               environment:
                 - TZ=Europe/Paris
-              labels:
-                - "traefik.enable=true"
-                - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
-                - "traefik.http.routers.authelia.entrypoints=websecure"
-                - "traefik.http.routers.authelia.tls=true"
-                - "traefik.http.services.authelia.loadbalancer.server.port=9091"
-                - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
-                - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
-                
+              ports:
+                - "80:9091"
+
             gitlab:
               image: gitlab/gitlab-ee:latest
               container_name: gitlab
@@ -184,22 +180,14 @@
                   gitlab_rails['ldap_create_admin'] = true
                   gitlab_rails['admin_username'] = '{{ lldap_admin }}'
               ports:
-                - "8929:80"
-                - "2289:22"
+                - "8080:80"
               volumes:
                 - gitlab_config:/etc/gitlab
                 - gitlab_logs:/var/log/gitlab
                 - gitlab_data:/var/opt/gitlab
               networks:
                 - web
-              labels:
-                - "traefik.enable=true"
-                - "traefik.http.routers.gitlab.rule=Host(`{{ gitlab_domain }}`)"
-                - "traefik.http.routers.gitlab.entrypoints=websecure"
-                - "traefik.http.routers.gitlab.tls=true"
-                - "traefik.http.routers.gitlab.middlewares=authelia@docker"
-                - "traefik.http.services.gitlab.loadbalancer.server.port=80"
-            
+
           networks:
             web:
               driver: bridge

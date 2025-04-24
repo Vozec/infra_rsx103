@@ -8,13 +8,17 @@
     fqdn: "{{ entreprise }}.{{ extension }}"
     
     subdomain: "traefik.{{ entreprise }}.{{ extension }}"
-    web_domain: "www.{{ entreprise }}.{{ extension }}"
     gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
     authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
+    lldap_domain: "lldap.{{ entreprise }}.{{ extension }}"
+    peertube_domain: "www.{{ entreprise }}.{{ extension }}"
 
     traefik_path: "/opt/traefik"
     ssl_path: "/etc/ssl/{{ entreprise }}"
     ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
+
+    peertube_postgres_password: "postgres"
+    peertube_postgres_user: "postgres"
 
   tasks:
     - name: Supprimer complètement les répertoires de données
@@ -69,6 +73,13 @@
         mode: '0644'
         content: |
           http:
+            middlewares:
+              gitlab-ip-whitelist:
+                ipWhiteList:
+                  sourceRange:
+                    - "192.168.40.0/24"
+                    - "192.168.30.0/24"
+
             routers:
               gitlab:
                 rule: "Host(`{{ gitlab_domain }}`)"
@@ -76,12 +87,43 @@
                   - websecure
                 service: gitlab
                 tls: true
+                middlewarses:
+                  - gitlab-ip-whitelist
+                  - authelia
 
             services:
               gitlab:
                 loadBalancer:
                   servers:
-                    - url: "http://192.168.30.10"
+                    - url: "http://192.168.30.10:8080"
+
+    - name: Ajouter le remote host lldap
+      copy:
+        dest: "{{ traefik_path }}/dynamic/lldap.yml"
+        mode: '0644'
+        content: |
+          http:
+            middlewares:
+              lldap-ip-whitelist:
+                ipWhiteList:
+                  sourceRange:
+                    - "192.168.40.0/24"
+
+            routers:
+              lldap:
+                rule: "Host(`{{ lldap_domain }}`)"
+                entryPoints:
+                  - websecure
+                service: lldap
+                tls: true
+                middlewares:
+                  - lldap-ip-whitelist
+
+            services:
+              lldap:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.40.10:443"
 
     - name: Ajouter le remote host authelia
       copy:
@@ -101,7 +143,19 @@
               authelia:
                 loadBalancer:
                   servers:
-                    - url: "http://192.168.30.10"
+                    - url: "http://192.168.30.10:80"
+
+            middlewares:
+              authelia:
+                forwardAuth:
+                  address: "http://192.168.30.10:80/api/authz/forward-auth"
+                  trustForwardHeader: true
+                  authResponseHeaders:
+                    - Remote-User
+                    - Remote-Groups
+                    - Remote-Name
+                    - Remote-Email
+
 
     - name: Configurer Traefik
       copy:
@@ -111,8 +165,17 @@
           entryPoints:
             web:
               address: ":80"
+              http:
+                redirections:
+                  entryPoint:
+                    to: websecure
+                    scheme: https
+
             websecure:
               address: ":443"
+
+          serversTransport:
+            insecureSkipVerify: true
 
           providers:
             file:
@@ -123,19 +186,103 @@
 
           api:
             dashboard: true
-            insecure: true
+            insecure: false
 
           tls:
             certificates:
               - certFile: "{{ ssl_path }}/{{ entreprise }}.crt"
-                keyFile: "{{ ssl_path }}/{{ entreprise }}.key"
+              - keyFile: "{{ ssl_path }}/{{ entreprise }}.key"
+
+    - name: .env Peertube
+      copy:
+        dest: "{{ traefik_path }}/.env"
+        mode: '0644'
+        content: |
+          POSTGRES_USER={{ peertube_postgres_user }}
+          POSTGRES_PASSWORD={{ peertube_postgres_password }}
+          POSTGRES_DB=peertube
+          PEERTUBE_DB_USERNAME={{ peertube_postgres_user }}
+          PEERTUBE_DB_PASSWORD={{ peertube_postgres_password }}
+          PEERTUBE_DB_SSL=false
+          PEERTUBE_DB_HOSTNAME=postgres
+          PEERTUBE_WEBSERVER_HOSTNAME=www.{{ entreprise }}.{{ extension }}
+          PEERTUBE_TRUST_PROXY=["127.0.0.1", "loopback", "172.18.0.0/16"]
+          PEERTUBE_SECRET=ee460eb52e6b27a871a3a74059c9b7fec13f2b8b58388c2e4cd6973037e00d06
+          PEERTUBE_WEBSERVER_HTTPS=true
+          PEERTUBE_WEBSERVER_PORT=443
+          PEERTUBE_SMTP_HOSTNAME=postfix
+          PEERTUBE_SMTP_PORT=25
+          PEERTUBE_SMTP_FROM=noreply@{{ entreprise }}.{{ extension }}
+          PEERTUBE_SMTP_TLS=false
+          PEERTUBE_SMTP_DISABLE_STARTTLS=false
+          PEERTUBE_ADMIN_EMAIL=admin@{{ entreprise }}.{{ extension }}
+          POSTFIX_myhostname={{ entreprise }}.{{ extension }}
+          OPENDKIM_DOMAINS={{ entreprise }}.{{ extension }}=peertube
+          OPENDKIM_RequireSafeKeys=no
+          PEERTUBE_OBJECT_STORAGE_UPLOAD_ACL_PUBLIC="public-read"
+          PEERTUBE_OBJECT_STORAGE_UPLOAD_ACL_PRIVATE="private"
+          PEERTUBE_LOG_LEVEL=info
+
+          #PEERTUBE_SIGNUP_ENABLED=true
+          #PEERTUBE_TRANSCODING_ENABLED=true
+          #PEERTUBE_CONTACT_FORM_ENABLED=true
+
 
     - name: Configurer Docker Compose
       copy:
         dest: "{{ traefik_path }}/docker-compose.yml"
         mode: '0644'
         content: |
+          version: '3.3'
+
           services:
+            peertube:
+              image: chocobozzz/peertube:production-bookworm
+              env_file: ['.env']
+              restart: always
+              volumes:
+                - assets:/app/client/dist
+                - ./docker-volume/data:/data
+                - ./docker-volume/config:/config
+              networks:
+                - web
+              depends_on:
+                - postgres
+                - redis
+                - postfix
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.peertube.rule=Host(`{{ peertube_domain }}`)"
+                - "traefik.http.routers.peertube.entrypoints=websecure"
+                - "traefik.http.routers.peertube.tls=true"
+                - "traefik.http.services.peertube.loadbalancer.server.port=9000"
+
+            postgres:
+              image: postgres:13-alpine
+              env_file: ['.env']
+              volumes:
+                - ./docker-volume/db:/var/lib/postgresql/data
+              restart: always
+              networks:
+                - web
+
+            redis:
+              image: redis:6-alpine
+              volumes:
+                - ./docker-volume/redis:/data
+              restart: always
+              networks:
+                - web
+
+            postfix:
+              image: mwader/postfix-relay
+              env_file: ['.env']
+              volumes:
+                - ./docker-volume/opendkim/keys:/etc/opendkim/keys
+              restart: always
+              networks:
+                - web
+
             traefik:
               image: traefik:latest
               container_name: traefik
@@ -155,12 +302,15 @@
                 - "traefik.http.routers.traefik.rule=Host(`{{ subdomain }}`)"
                 - "traefik.http.routers.traefik.entrypoints=websecure"
                 - "traefik.http.routers.traefik.tls=true"
-                - "traefik.http.services.traefik.loadbalancer.server.port=8080"
-                - "traefik.http.routers.traefik.middlewares=authelia@docker"
+                - "traefik.http.routers.traefik.service=api@internal"
+                - "traefik.http.routers.gitlab.middlewares=authelia@file"
 
           networks:
             web:
               driver: bridge
+          
+          volumes:
+            assets: {}
 
     - name: Lancer les conteneurs
       command: docker compose up -d

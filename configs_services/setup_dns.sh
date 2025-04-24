@@ -8,14 +8,14 @@ sudo systemctl stop systemd-resolved
 sudo systemctl disable systemd-resolved
 
 # Ajout des entrées locales dans la configuration de dnsmasq
-sudo bash -c 'echo "address=/prometheus.monentreprise.lan/192.168.20.10" >> /etc/dnsmasq.conf'
-sudo bash -c 'echo "address=/grafana.monentreprise.lan/192.168.20.10" >> /etc/dnsmasq.conf'
-sudo bash -c 'echo "address=/alertmanager.monentreprise.lan/192.168.20.10" >> /etc/dnsmasq.conf'
+sudo bash -c 'echo "address=/prometheus.monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
+sudo bash -c 'echo "address=/grafana.monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
+sudo bash -c 'echo "address=/alertmanager.monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
 
-sudo bash -c 'echo "address=/vpn-admin.monentreprise.lan/192.168.40.10" >> /etc/dnsmasq.conf'
-sudo bash -c 'echo "address=/ldap-manager.monentreprise.lan/192.168.20.10" >> /etc/dnsmasq.conf'
+sudo bash -c 'echo "address=/vpn-admin.monentreprise.com/192.168.40.10" >> /etc/dnsmasq.conf'
+sudo bash -c 'echo "address=/lldap.monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
 
-sudo bash -c 'echo "address=/www.monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
+sudo bash -c 'echo "address=/monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
 sudo bash -c 'echo "address=/traefik.monentreprise.com/192.168.20.10" >> /etc/dnsmasq.conf'
 sudo bash -c 'echo "address=/vpn-internal.monentreprise.com/192.168.20.20" >> /etc/dnsmasq.conf'
 

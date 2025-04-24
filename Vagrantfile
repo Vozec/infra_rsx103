@@ -9,6 +9,14 @@ Vagrant.configure("2") do |config|
       vb.memory = "1024"
       vb.cpus = 1
     end
+    vm0.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
+    vm0.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_ldap.yaml"
+      ansible.verbose = "v"
+    end
     vm0.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.20.0/24 via 192.168.40.30
       sudo ip route add 192.168.30.0/24 via 192.168.40.30
@@ -21,7 +29,7 @@ Vagrant.configure("2") do |config|
     vm1.vm.hostname = "openvpn-admin"
     vm1.vm.network "private_network", ip: "192.168.40.20"
     vm1.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
+      vb.memory = "512"
       vb.cpus = 1
     end
   end
@@ -43,6 +51,9 @@ Vagrant.configure("2") do |config|
       ansible.verbose = "v"
     end
     vm2.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.20.0/24 via 192.168.30.30
+      sudo ip route del default
+      sudo ip route add default via 192.168.30.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -69,7 +80,7 @@ Vagrant.configure("2") do |config|
     vm4.vm.box = "ubuntu/focal64"
     vm4.vm.network "private_network", ip: "192.168.20.10"
     vm4.vm.provider "virtualbox" do |vb|
-      vb.memory = "3072"
+      vb.memory = "2048"
       vb.cpus = 1
     end
     vm4.vm.provision "ansible" do |ansible|
@@ -82,6 +93,8 @@ Vagrant.configure("2") do |config|
     end
     vm4.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
+      sudo ip route del default
+      sudo ip route add default via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -91,12 +104,14 @@ Vagrant.configure("2") do |config|
     vm5.vm.hostname = "openvpn-internal"
     vm5.vm.network "private_network", ip: "192.168.20.20"
     vm5.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
+      vb.memory = "512"
       vb.cpus = 1
     end
     vm5.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
+      sudo ip route del default
+      sudo ip route add default via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -106,12 +121,14 @@ Vagrant.configure("2") do |config|
     vm6.vm.hostname = "dns"
     vm6.vm.network "private_network", ip: "192.168.20.40"
     vm6.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
+      vb.memory = "512"
       vb.cpus = 1
     end
     vm6.vm.provision "shell", path: "./configs_services/setup_dns.sh"
     vm6.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
+      sudo ip route del default
+      sudo ip route add default via 192.168.20.30
     SHELL
   end
 
@@ -121,12 +138,14 @@ Vagrant.configure("2") do |config|
     vm7.vm.network "private_network", ip: "192.168.20.50"
     vm7.vm.network "private_network", ip: "192.168.10.50"
     vm7.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
+      vb.memory = "512"
       vb.cpus = 1
     end
     vm7.vm.provision "shell", path: "./configs_firewalls/setup_front.sh"
     vm7.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
+      sudo ip route del default
+      sudo ip route add default via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -136,7 +155,7 @@ Vagrant.configure("2") do |config|
     vm8.vm.hostname = "public-machine"
     vm8.vm.network "private_network", ip: "192.168.10.10"
     vm8.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
+      vb.memory = "512"
       vb.cpus = 1
     end
     vm8.vm.provision "shell", inline: <<-SHELL

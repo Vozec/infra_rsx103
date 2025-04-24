@@ -1,0 +1,182 @@
+- name: Déployer LLDAP avec certificats personnalisés
+  hosts: all
+  become: true
+
+  vars:
+    extension: "com"
+    entreprise: "monentreprise"
+    fqdn: "{{ entreprise }}.{{ extension }}"
+    lldap_domain: "lldap.{{ entreprise }}.{{ extension }}"
+    lldap_path: "/tmp/lldap"
+    cert_path: "{{ playbook_dir }}/cert"
+
+    lldap_jwt: "SuperSecretKeyToReplace"
+    lldap_admin: "admin"
+    lldap_pass: "password"
+    lldap_host: "lldap"
+    lldap_port: "389"
+
+  tasks:
+    - name: Nettoyer les anciens conteneurs et volumes
+      shell: |
+        docker rm -f $(docker ps -aq) || true
+        docker volume rm $(docker volume ls -q) || true
+      ignore_errors: true
+
+    - name: Supprimer répertoire LLDAP
+      file:
+        path: "{{ lldap_path }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Créer les dossiers nécessaires
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ lldap_path }}"
+
+    - name: Vérifier que Docker est installé
+      command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Créer le réseau Docker "lldap"
+      shell: docker network inspect lldap || docker network create lldap
+      register: lldap_network_result
+      changed_when: "'Created' in lldap_network_result.stdout"
+
+    - name: Copier le docker-compose avec certificats
+      copy:
+        dest: "{{ lldap_path }}/docker-compose.yml"
+        mode: '0644'
+        content: |
+          services:
+            lldap:
+              image: osixia/openldap:1.5.0
+              container_name: lldap
+              restart: unless-stopped
+              networks:
+                - lldap
+              environment:
+                - LDAP_ORGANISATION={{ entreprise }}
+                - LDAP_DOMAIN={{ entreprise }}.{{ extension }}
+                - LDAP_ADMIN_PASSWORD={{ lldap_pass }}
+                - LDAP_TLS=true
+                - LDAP_TLS_CRT_FILENAME=monentreprise.crt
+                - LDAP_TLS_KEY_FILENAME=monentreprise.key
+                - LDAP_TLS_CA_CRT_FILENAME=rootCA.pem
+              ports:
+                - "389:389"
+                - "636:636"
+              volumes:
+                - lldap_data:/var/lib/ldap
+                - lldap_config:/etc/ldap/slapd.d
+                - {{ cert_path }}:/container/service/slapd/assets/certs
+
+            ldap-user-manager:
+              image: wheelybird/ldap-user-manager:v1.11
+              container_name: ldap-user-manager
+              restart: unless-stopped
+              networks:
+                - lldap
+              ports:
+                - "443:443"
+              environment:
+                - SERVER_HOSTNAME={{ lldap_domain }}
+                - LDAP_URI=ldap://lldap:389
+                - LDAP_BASE_DN=dc={{ entreprise }},dc={{ extension }}
+                - LDAP_ADMIN_BIND_DN=cn=admin,dc={{ entreprise }},dc={{ extension }}
+                - LDAP_ADMIN_BIND_PWD={{ lldap_pass }}
+                - LDAP_ADMINS_GROUP=admins
+                - HTTPS_CERT=/certs/monentreprise.crt
+                - HTTPS_KEY=/certs/monentreprise.key
+              volumes:
+                - {{ cert_path }}:/certs:ro
+
+          networks:
+            lldap:
+              driver: bridge
+
+          volumes:
+            lldap_data:
+            lldap_config:
+
+    - name: Lancer les conteneurs
+      command: docker compose up -d
+      args:
+        chdir: "{{ lldap_path }}"
+
+    - name: Créer le dossier bootstrap
+      file:
+        path: "{{ lldap_path }}/bootstrap"
+        state: directory
+        mode: '0755'
+
+    - name: Créer le fichier LDIF pour utilisateur admin + groupes
+      copy:
+        dest: "{{ lldap_path }}/bootstrap/users.ldif"
+        mode: '0644'
+        content: |
+          dn: ou=people,dc={{ entreprise }},dc={{ extension }}
+          objectClass: organizationalUnit
+          ou: people
+
+          dn: uid={{ lldap_admin }},ou=people,dc={{ entreprise }},dc={{ extension }}
+          objectClass: inetOrgPerson
+          uid: {{ lldap_admin }}
+          sn: Admin
+          cn: {{ lldap_admin }}
+          userPassword: {{ lldap_pass }}
+
+          dn: ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: organizationalUnit
+          ou: groups
+
+          dn: cn=admins,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: admins
+          gidNumber: 10000
+          memberUid: {{ lldap_admin }}
+
+          dn: cn=gitlab,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: gitlab
+          gidNumber: 10001
+          memberUid: {{ lldap_admin }}
+
+    - name: Attendre que LDAP soit accessible sur 389
+      wait_for:
+        host: "127.0.0.1"
+        port: 389
+        timeout: 30
+
+    - name: Attendre 5 secondes
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Mettre à jour le cache APT
+      apt:
+        update_cache: yes
+
+    - name: Installer ldap-utils
+      apt:
+        name: ldap-utils
+        state: present
+
+    - name: Injecter les entrées LDIF dans LDAP depuis l’hôte
+      shell: |
+        ldapadd -x \
+          -H ldap://localhost:389 \
+          -D "cn=admin,dc={{ entreprise }},dc={{ extension }}" \
+          -w {{ lldap_pass }} \
+          -f {{ lldap_path }}/bootstrap/users.ldif
+      register: inject_ldif_result
+      changed_when: "'adding new entry' in inject_ldif_result.stdout or 'already exists' in inject_ldif_result.stdout"
+      failed_when: inject_ldif_result.rc != 0 and "'already exists' not in inject_ldif_result.stdout"
+
+
+
+
+
