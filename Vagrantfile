@@ -72,12 +72,20 @@ Vagrant.configure("2") do |config|
       vb.memory = "3072"
       vb.cpus = 1
     end
+    vm4.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
+    vm4.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_services_exposed.yaml"
+      ansible.verbose = "v"
+    end
     vm4.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
-
+  
   # VM5 - OpenVPN interne
   config.vm.define "vm5" do |vm5|
     vm5.vm.hostname = "openvpn-internal"
@@ -140,6 +148,4 @@ Vagrant.configure("2") do |config|
       sudo apt-get update -y --fix-missing &&  apt-get install -y curl nmap inetutils-traceroute
     SHELL
   end
-
-
 end

@@ -1,5 +1,5 @@
 - name: Déployer Traefik avec SSL local, Authelia et Nginx
-  hosts: localhost
+  hosts: all
   become: true
 
   vars:
@@ -52,7 +52,7 @@
 
     - name: Copier les certificats SSL
       copy:
-        src: "cert/{{ item.src }}"
+        src: "../configs_services/cert/{{ item.src }}"
         dest: "{{ item.dest }}"
         mode: '{{ item.mode }}'
       loop:
@@ -116,7 +116,7 @@
 
           providers:
             file:
-              directory: "{{ traefik_path }}/dynamic/"
+              directory: "/etc/traefik/dynamic/"
               watch: true
             docker:
               exposedByDefault: false
@@ -147,6 +147,7 @@
                 - "80:80"
               volumes:
                 - "{{ traefik_path }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+                - "{{ traefik_path }}/dynamic:/etc/traefik/dynamic:ro"
                 - "/etc/ssl/monentreprise:/etc/traefik/certs"
                 - /var/run/docker.sock:/var/run/docker.sock:ro
               labels:

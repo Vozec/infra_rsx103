@@ -1,5 +1,5 @@
 - name: Déployer Traefik avec SSL local, Authelia et Nginx
-  hosts: localhost
+  hosts: all
   become: true
 
   vars:
@@ -22,20 +22,20 @@
 
   tasks:
     - name: Supprimer complètement les répertoires de données
-        file:
-          path: "{{ item }}"
-          state: absent
-        loop:
-          - "{{ authelia_path }}"
-        ignore_errors: true
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ authelia_path }}"
+      ignore_errors: true
         
-      - name: Créer les dossiers nécessaires
-        file:
-          path: "{{ item }}"
-          state: directory
-          mode: '0755'
-        loop:
-          - "{{ authelia_path }}"
+    - name: Créer les dossiers nécessaires
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ authelia_path }}"
     
     # Nettoyage complet de l'environnement
     - name: Arrêter et supprimer tous les conteneurs
@@ -124,22 +124,22 @@
         content: |
           services:
             authelia:
-                image: authelia/authelia
-                container_name: authelia
-                networks:
-                  - web
-                volumes:
-                  - "{{ authelia_path }}:/config"
-                environment:
-                  - TZ=Europe/Paris
-                labels:
-                  - "traefik.enable=true"
-                  - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
-                  - "traefik.http.routers.authelia.entrypoints=websecure"
-                  - "traefik.http.routers.authelia.tls=true"
-                  - "traefik.http.services.authelia.loadbalancer.server.port=9091"
-                  - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
-                  - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+              image: authelia/authelia
+              container_name: authelia
+              networks:
+                - web
+              volumes:
+                - "{{ authelia_path }}:/config"
+              environment:
+                - TZ=Europe/Paris
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
+                - "traefik.http.routers.authelia.entrypoints=websecure"
+                - "traefik.http.routers.authelia.tls=true"
+                - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+                - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+                - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
                 
             gitlab:
               image: gitlab/gitlab-ee:latest
@@ -180,9 +180,7 @@
 
                   gitlab_rails['ldap_sync_worker_cron'] = "0 * * * *"
                   gitlab_rails['ldap_group_sync_enabled'] = true
-
                   gitlab_rails['initial_root_password'] = '{{ lldap_pass }}'
-
                   gitlab_rails['ldap_create_admin'] = true
                   gitlab_rails['admin_username'] = '{{ lldap_admin }}'
               ports:
