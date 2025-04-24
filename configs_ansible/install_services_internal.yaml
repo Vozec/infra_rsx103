@@ -1,0 +1,221 @@
+- name: Déployer Traefik avec SSL local, Authelia et Nginx
+  hosts: localhost
+  become: true
+
+  vars:
+    extension: "com"
+    entreprise: "monentreprise"
+    fqdn: "{{ entreprise }}.{{ extension }}"
+    subdomain: "traefik.{{ entreprise }}.{{ extension }}"
+    gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
+    authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
+
+    authelia_path: "/opt/authelia"
+    authelia_identity_jwt: "a_very_secret_key"
+    authelia_session_jwt: "a_very_secret_key"
+    authelia_storage_jwt: "a_storage_secret_key"
+    
+    lldap_admin: "admin"
+    lldap_pass: "password"
+    lldap_host: "lldap"
+    lldap_port: "389"
+
+  tasks:
+    - name: Supprimer complètement les répertoires de données
+        file:
+          path: "{{ item }}"
+          state: absent
+        loop:
+          - "{{ authelia_path }}"
+        ignore_errors: true
+        
+      - name: Créer les dossiers nécessaires
+        file:
+          path: "{{ item }}"
+          state: directory
+          mode: '0755'
+        loop:
+          - "{{ authelia_path }}"
+    
+    # Nettoyage complet de l'environnement
+    - name: Arrêter et supprimer tous les conteneurs
+      shell: |
+        docker rm -f $(docker ps -a -q) || true
+      ignore_errors: true
+
+    - name: Supprimer tous les volumes Docker
+      shell: |
+        docker volume rm $(docker volume ls -q) || true
+      ignore_errors: true
+
+    - name: S'assurer que le réseau Docker "web" existe
+      shell: docker network inspect web || docker network create web
+      register: web_network_result
+      changed_when: "'Created' in web_network_result.stdout"
+
+    - name: Configurer Authelia
+      copy:
+        dest: "{{ authelia_path }}/configuration.yml"
+        mode: '0644'
+        content: |
+          theme: dark
+
+          identity_validation:
+            reset_password:
+              jwt_secret: "{{ authelia_identity_jwt }}"
+
+          # LOCAL AUTH 
+          # authentication_backend:
+          #   file:
+          #     path: /config/users.yml
+
+          # AUTH With LLDAP 
+          authentication_backend:
+            ldap:
+              implementation: custom
+              address: ldap://{{ lldap_host }}:{{ lldap_port }}
+              base_dn: dc={{ entreprise }},dc={{ extension }}
+              additional_users_dn: ""
+              additional_groups_dn: ou=groups
+              user: cn={{ lldap_admin }},dc={{ entreprise }},dc={{ extension }}
+              password: {{ lldap_pass }}
+              attributes:
+                username: uid
+                group_name: cn
+              users_filter: "(&({username_attribute}={input})(objectClass=person))"
+              # groups_filter: "(&(member={dn})(objectClass=groupOfNames))"
+              groups_filter: "(&(memberUid={username})(objectClass=posixGroup))"
+
+          session:
+            name: authelia_session
+            secret: "{{ authelia_session_jwt }}"
+            expiration: 3600
+            inactivity: 300
+            cookies:
+              - domain: "{{ fqdn }}"
+                authelia_url: "https://{{ authelia_domain }}"
+                default_redirection_url: "https://{{ web_domain }}"
+
+          storage:
+            local:
+              path: /config/db.sqlite3
+            encryption_key: "{{ authelia_storage_jwt }}"
+
+          notifier:
+            filesystem:
+              filename: /config/notification.txt
+
+          access_control:
+            default_policy: deny
+            rules:
+              - domain: "{{ subdomain }}"
+                subject:
+                  - "group:admins"
+                policy: one_factor
+              - domain: "{{ gitlab_domain }}"
+                subject:
+                  - "group:gitlab"
+                policy: one_factor
+
+    - name: Configurer Docker Compose
+      copy:
+        dest: "/tmp/docker-compose.yml"
+        mode: '0644'
+        content: |
+          services:
+            authelia:
+                image: authelia/authelia
+                container_name: authelia
+                networks:
+                  - web
+                volumes:
+                  - "{{ authelia_path }}:/config"
+                environment:
+                  - TZ=Europe/Paris
+                labels:
+                  - "traefik.enable=true"
+                  - "traefik.http.routers.authelia.rule=Host(`{{ authelia_domain }}`)"
+                  - "traefik.http.routers.authelia.entrypoints=websecure"
+                  - "traefik.http.routers.authelia.tls=true"
+                  - "traefik.http.services.authelia.loadbalancer.server.port=9091"
+                  - "traefik.http.middlewares.authelia.forwardauth.address=http://authelia:9091/api/authz/forward-auth"
+                  - "traefik.http.middlewares.authelia.forwardauth.trustForwardHeader=true"
+                
+            gitlab:
+              image: gitlab/gitlab-ee:latest
+              container_name: gitlab
+              restart: unless-stopped
+              hostname: "{{ fqdn }}"
+              environment:
+                GITLAB_OMNIBUS_CONFIG: |
+                  external_url 'https://{{ gitlab_domain }}'
+                  nginx['listen_port'] = 80
+                  nginx['listen_https'] = false
+                  gitlab_rails['ldap_enabled'] = true
+                  gitlab_rails['ldap_servers'] = {
+                    'main' => {
+                      'label' => 'LDAP',
+                      'host' => '{{ lldap_host }}',
+                      'port' => {{ lldap_port }},
+                      'uid' => 'uid',
+                      'bind_dn' => 'cn={{ lldap_admin }},dc={{ entreprise }},dc={{ extension }}',
+                      'password' => '{{ lldap_pass }}',
+                      'encryption' => 'plain',
+                      'verify_certificates' => false,
+                      'active_directory' => false,
+                      'allow_username_or_email_login' => true,
+                      'base' => 'dc={{ entreprise }},dc={{ extension }}',
+                      'group_base' => 'ou=groups,dc={{ entreprise }},dc={{ extension }}',
+                      'user_filter' => '',
+                      'group_filter' => '',
+                      'attributes' => {
+                        'username' => 'uid',
+                        'email' => 'mail',
+                        'name' => 'cn',
+                        'first_name' => 'givenName',
+                        'last_name' => 'sn'
+                      }
+                    }
+                  }
+
+                  gitlab_rails['ldap_sync_worker_cron'] = "0 * * * *"
+                  gitlab_rails['ldap_group_sync_enabled'] = true
+
+                  gitlab_rails['initial_root_password'] = '{{ lldap_pass }}'
+
+                  gitlab_rails['ldap_create_admin'] = true
+                  gitlab_rails['admin_username'] = '{{ lldap_admin }}'
+              ports:
+                - "8929:80"
+                - "2289:22"
+              volumes:
+                - gitlab_config:/etc/gitlab
+                - gitlab_logs:/var/log/gitlab
+                - gitlab_data:/var/opt/gitlab
+              networks:
+                - web
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.gitlab.rule=Host(`{{ gitlab_domain }}`)"
+                - "traefik.http.routers.gitlab.entrypoints=websecure"
+                - "traefik.http.routers.gitlab.tls=true"
+                - "traefik.http.routers.gitlab.middlewares=authelia@docker"
+                - "traefik.http.services.gitlab.loadbalancer.server.port=80"
+            
+          networks:
+            web:
+              driver: bridge
+
+          volumes:
+            gitlab_config:
+            gitlab_logs:
+            gitlab_data:
+
+    - name: Lancer les conteneurs
+      command: docker compose up -d
+      args:
+        chdir: "/tmp"
+        
+    - name: Attendre que les conteneurs soient prêts
+      wait_for:
+        timeout: 30

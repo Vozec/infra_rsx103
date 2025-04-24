@@ -34,6 +34,17 @@ Vagrant.configure("2") do |config|
       vb.memory = "2048"
       vb.cpus = 1
     end
+    vm2.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
+    vm2.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_services_internal.yaml"
+      ansible.verbose = "v"
+    end
+    vm2.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
+    SHELL
   end
 
   # VM3 - Firewall: Interne <-> Admin <-> DMZ 

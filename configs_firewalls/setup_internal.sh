@@ -22,7 +22,7 @@ sudo iptables -t nat -A POSTROUTING -o enp0s9 -j MASQUERADE
 sudo iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 # Autoriser uniquement certains ports entre réseau Public (192.168.10.0/24) et DMZ (192.168.20.0/24)
-ALLOWED=( "80/tcp" "443/tcp" "53/udp" )
+ALLOWED=( "80/tcp" "443/tcp" "53/udp" "9091/tcp")
 
 for rule in "${ALLOWED[@]}"; do
     IFS="/" read port proto <<< "$rule"
