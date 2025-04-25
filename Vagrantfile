@@ -18,6 +18,7 @@ Vagrant.configure("2") do |config|
       ansible.verbose = "v"
     end
     vm0.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.10.0/24 via 192.168.40.30
       sudo ip route add 192.168.20.0/24 via 192.168.40.30
       sudo ip route add 192.168.30.0/24 via 192.168.40.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
@@ -32,6 +33,12 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.cpus = 1
     end
+    vm1.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.10.0/24 via 192.168.40.30
+      sudo ip route add 192.168.20.0/24 via 192.168.40.30
+      sudo ip route add 192.168.30.0/24 via 192.168.40.30
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
+    SHELL
   end
 
   # VM2 - Services internes
@@ -39,7 +46,7 @@ Vagrant.configure("2") do |config|
     vm2.vm.hostname = "services"
     vm2.vm.network "private_network", ip: "192.168.30.10"
     vm2.vm.provider "virtualbox" do |vb|
-      vb.memory = "2048"
+      vb.memory = "4096"
       vb.cpus = 1
     end
     vm2.vm.provision "ansible" do |ansible|
@@ -51,9 +58,9 @@ Vagrant.configure("2") do |config|
       ansible.verbose = "v"
     end
     vm2.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.10.0/24 via 192.168.30.30
       sudo ip route add 192.168.20.0/24 via 192.168.30.30
-      sudo ip route del default
-      sudo ip route add default via 192.168.30.30
+      sudo ip route add 192.168.40.0/24 via 192.168.30.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -92,9 +99,9 @@ Vagrant.configure("2") do |config|
       ansible.verbose = "v"
     end
     vm4.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.10.0/24 via 192.168.20.50
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
-      sudo ip route del default
-      sudo ip route add default via 192.168.20.30
+      sudo ip route add 192.168.40.0/24 via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -108,10 +115,9 @@ Vagrant.configure("2") do |config|
       vb.cpus = 1
     end
     vm5.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.10.0/24 via 192.168.20.50
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
-      sudo ip route del default
-      sudo ip route add default via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -126,9 +132,9 @@ Vagrant.configure("2") do |config|
     end
     vm6.vm.provision "shell", path: "./configs_services/setup_dns.sh"
     vm6.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.10.0/24 via 192.168.20.50
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
-      sudo ip route del default
-      sudo ip route add default via 192.168.20.30
+      sudo ip route add 192.168.40.0/24 via 192.168.20.30
     SHELL
   end
 
@@ -143,9 +149,8 @@ Vagrant.configure("2") do |config|
     end
     vm7.vm.provision "shell", path: "./configs_firewalls/setup_front.sh"
     vm7.vm.provision "shell", inline: <<-SHELL
+      sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
-      sudo ip route del default
-      sudo ip route add default via 192.168.20.30
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
@@ -159,12 +164,13 @@ Vagrant.configure("2") do |config|
       vb.cpus = 1
     end
     vm8.vm.provision "shell", inline: <<-SHELL
-      sudo ip route add 192.168.20.0/24 via 192.168.10.50
-      sudo ip route add 192.168.40.0/24 via 192.168.10.50
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
+      sudo apt-get update -y --fix-missing &&  apt-get install -y curl nmap inetutils-traceroute
     SHELL
     vm8.vm.provision "shell", inline: <<-SHELL
-      sudo apt-get update -y --fix-missing &&  apt-get install -y curl nmap inetutils-traceroute
+      sudo ip route add 192.168.20.0/24 via 192.168.10.50
+      sudo ip route add 192.168.30.0/24 via 192.168.10.50
+      sudo ip route add 192.168.40.0/24 via 192.168.10.50
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 end

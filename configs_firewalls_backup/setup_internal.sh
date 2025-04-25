@@ -14,46 +14,44 @@ sudo iptables -t nat -X
 # Politique par défaut : DROP sur FORWARD (sécurisé)
 sudo iptables -P FORWARD DROP
 
-# Autoriser le trafic entre les sous-réseaux internes (sans réécrire l'IP source)
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -j ACCEPT
-
-# Ajouter des règles pour marquer les connexions
-sudo iptables -t mangle -A FORWARD -m state --state NEW -j CONNMARK --set-mark 1
-sudo iptables -t mangle -A FORWARD -m connmark --mark 1 -j ACCEPT
-
-# Journaliser le trafic bloqué
-sudo iptables -A FORWARD -j LOG --log-prefix "Traffic Blocked: " --log-level 4
+# NAT : masquerading pour la sortie vers enp0s8 & enp0s9
+sudo iptables -t nat -A POSTROUTING -o enp0s8 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -o enp0s9 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -o enp0s10 -j MASQUERADE
 
 # Autoriser les connexions déjà établies ou liées
 sudo iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-# Autoriser uniquement certains ports entre les sous-réseaux spécifiques (exemple pour la DMZ et l'Interne)
-ALLOWED=( "80/tcp" "8080/tcp" "443/tcp" "53/udp" "389/tcp")
+# .20 et .30 | 80(Authelia) | 443(Traefik) | 53 (DNS)
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p tcp --dport 443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p tcp --dport 443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p tcp --dport 53 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p tcp --dport 53 -j ACCEPT
 
-for rule in "${ALLOWED[@]}"; do
-    IFS="/" read port proto <<< "$rule"
+# .20 et.40 | 80(Authelia) | 443(Traefik) | 53 (DNS)
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 53 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 53 -j ACCEPT
 
-    # Entrée : DMZ → Interne & DMZ → Admin
-    sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p $proto --dport $port -j ACCEPT
-    sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p $proto --dport $port -j ACCEPT
+# .30 et .40 | 8080(Gitlab)
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p tcp --dport 8080 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp --dport 8080 -j ACCEPT
 
-    # Sortie : Interne → DMZ & Admin → DMZ
-    sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p $proto --dport $port -j ACCEPT
-    sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p $proto --dport $port -j ACCEPT
-done
+# Autoriser ICMP entre tous les réseaux
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p icmp -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p icmp -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p icmp -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p icmp -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p icmp -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p icmp -j ACCEPT
 
-# Autoriser uniquement le VPN (port custom 999) à aller de public à Admin
-sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.40.0/24 -p udp --dport 999 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p udp --dport 999 -j ACCEPT
-
-# Bloquer explicitement tout autre trafic entre réseaux
-sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.30.0/24 -j REJECT
-sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.40.0/24 -j REJECT
+# Bloquer explicitement tout autre trafic
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -j REJECT
 sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -j REJECT
 sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -j REJECT
 

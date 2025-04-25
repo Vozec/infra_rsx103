@@ -8,9 +8,7 @@
     fqdn: "{{ entreprise }}.{{ extension }}"
     
     subdomain: "traefik.{{ entreprise }}.{{ extension }}"
-    gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
     authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
-    lldap_domain: "lldap.{{ entreprise }}.{{ extension }}"
     peertube_domain: "www.{{ entreprise }}.{{ extension }}"
 
     traefik_path: "/opt/traefik"
@@ -67,63 +65,63 @@
     - name: Mettre à jour les certificats
       command: update-ca-certificates
 
-    - name: Ajouter le remote host gitlab
-      copy:
-        dest: "{{ traefik_path }}/dynamic/gitlab.yml"
-        mode: '0644'
-        content: |
-          http:
-            middlewares:
-              gitlab-ip-whitelist:
-                ipWhiteList:
-                  sourceRange:
-                    - "192.168.40.0/24"
-                    - "192.168.30.0/24"
+    # - name: Ajouter le remote host gitlab
+    #   copy:
+    #     dest: "{{ traefik_path }}/dynamic/gitlab.yml"
+    #     mode: '0644'
+    #     content: |
+    #       http:
+    #         middlewares:
+    #           gitlab-ip-whitelist:
+    #             ipWhiteList:
+    #               sourceRange:
+    #                 - "192.168.40.0/24"
+    #                 - "192.168.30.0/24"
 
-            routers:
-              gitlab:
-                rule: "Host(`{{ gitlab_domain }}`)"
-                entryPoints:
-                  - websecure
-                service: gitlab
-                tls: true
-                middlewarses:
-                  - gitlab-ip-whitelist
-                  - authelia
+    #         routers:
+    #           gitlab:
+    #             rule: "Host(`{{ gitlab_domain }}`)"
+    #             entryPoints:
+    #               - websecure
+    #             service: gitlab
+    #             tls: true
+    #             middlewares:
+    #               - gitlab-ip-whitelist
+    #               - authelia
 
-            services:
-              gitlab:
-                loadBalancer:
-                  servers:
-                    - url: "http://192.168.30.10:8080"
+    #         services:
+    #           gitlab:
+    #             loadBalancer:
+    #               servers:
+    #                 - url: "http://192.168.30.10:8080"
 
-    - name: Ajouter le remote host lldap
-      copy:
-        dest: "{{ traefik_path }}/dynamic/lldap.yml"
-        mode: '0644'
-        content: |
-          http:
-            middlewares:
-              lldap-ip-whitelist:
-                ipWhiteList:
-                  sourceRange:
-                    - "192.168.40.0/24"
+    # - name: Ajouter le remote host lldap
+    #   copy:
+    #     dest: "{{ traefik_path }}/dynamic/lldap.yml"
+    #     mode: '0644'
+    #     content: |
+    #       http:
+    #         middlewares:
+    #           lldap-ip-whitelist:
+    #             ipWhiteList:
+    #               sourceRange:
+    #                 - "192.168.40.0/24"
 
-            routers:
-              lldap:
-                rule: "Host(`{{ lldap_domain }}`)"
-                entryPoints:
-                  - websecure
-                service: lldap
-                tls: true
-                middlewares:
-                  - lldap-ip-whitelist
+    #         routers:
+    #           lldap:
+    #             rule: "Host(`{{ lldap_domain }}`)"
+    #             entryPoints:
+    #               - websecure
+    #             service: lldap
+    #             tls: true
+    #             middlewares:      
+    #               - lldap-ip-whitelist
 
-            services:
-              lldap:
-                loadBalancer:
-                  servers:
-                    - url: "http://192.168.40.10:443"
+    #         services:
+    #           lldap:
+    #             loadBalancer:
+    #               servers:
+    #                 - url: "http://192.168.40.10:443"
 
     - name: Ajouter le remote host authelia
       copy:
@@ -179,7 +177,7 @@
 
           providers:
             file:
-              directory: "/etc/traefik/dynamic/"
+              directory: "/etc/traefik/dynamic"
               watch: true
             docker:
               exposedByDefault: false
@@ -303,7 +301,7 @@
                 - "traefik.http.routers.traefik.entrypoints=websecure"
                 - "traefik.http.routers.traefik.tls=true"
                 - "traefik.http.routers.traefik.service=api@internal"
-                - "traefik.http.routers.gitlab.middlewares=authelia@file"
+                - "traefik.http.routers.traefik.middlewares=authelia@file"
 
           networks:
             web:

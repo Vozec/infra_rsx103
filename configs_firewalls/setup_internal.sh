@@ -1,24 +1,39 @@
 #!/bin/bash
 
-# Activer le routage IP (immédiat + persistant)
-sudo sysctl -w net.ipv4.ip_forward=1
-sudo grep -q '^net.ipv4.ip_forward=1' /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf > /dev/null
-sudo sysctl -p > /dev/null
+# Activer le forwarding IP
+echo "1" | sudo tee /proc/sys/net/ipv4/ip_forward > /dev/null
 
-# Vider les règles existantes pour partir propre
+# Réinitialiser les règles
 sudo iptables -F
 sudo iptables -t nat -F
 sudo iptables -t mangle -F
 sudo iptables -X
 
-sudo iptables -A FORWARD -i enp0s8 -o enp0s9 -j ACCEPT
-sudo iptables -A FORWARD -i enp0s9 -o enp0s8 -j ACCEPT
+# Politique par défaut
+sudo iptables -P INPUT ACCEPT
+sudo iptables -P OUTPUT ACCEPT
+sudo iptables -P FORWARD DROP
 
-sudo iptables -A FORWARD -i enp0s8 -o enp0s10 -j ACCEPT
-sudo iptables -A FORWARD -i enp0s10 -o enp0s8 -j ACCEPT
+# NAT Masquerade pour chaque interface
+sudo iptables -t nat -A POSTROUTING -o enp0s8 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -o enp0s9 -j MASQUERADE
+sudo iptables -t nat -A POSTROUTING -o enp0s10 -j MASQUERADE
 
-sudo iptables -A FORWARD -i enp0s9 -o enp0s10 -j ACCEPT
-sudo iptables -A FORWARD -i enp0s10 -o enp0s9 -j ACCEPT
+# Autoriser connexions établies
+sudo iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-sudo mkdir -p /etc/iptables
-sudo sh -c 'iptables-save > /etc/iptables/rules.v4'
+# === Règles .20 -> .30 et .40 : ports 53, 80, 443 uniquement ===
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p tcp -m multiport --dports 53,80,443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p udp --dport 53 -j ACCEPT
+
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp -m multiport --dports 53,80,443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p udp --dport 53 -j ACCEPT
+
+# === Règles .30 <-> .40 : ports 80, 8080, 389 uniquement ===
+# .30 -> .40
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p tcp -m multiport --dports 80,8080,389 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p udp --dport 389 -j ACCEPT
+
+# .40 -> .30
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp -m multiport --dports 80,8080,389 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p udp --dport 389 -j ACCEPT

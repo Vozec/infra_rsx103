@@ -11,6 +11,10 @@
     authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
     web_domain: "www.{{ entreprise }}.{{ extension }}"
     
+    ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
+    traefik_path: "/opt/traefik"
+    ssl_path: "/etc/ssl/{{ entreprise }}"
+
     authelia_path: "/opt/authelia"
     authelia_identity_jwt: "a_very_secret_key"
     authelia_session_jwt: "a_very_secret_key"
@@ -29,6 +33,7 @@
         state: absent
       loop:
         - "{{ authelia_path }}"
+        - "{{ traefik_path }}"
       ignore_errors: true
         
     - name: Créer les dossiers nécessaires
@@ -38,8 +43,10 @@
         mode: '0755'
       loop:
         - "{{ authelia_path }}"
+        - "{{ traefik_path }}"
+        - "{{ traefik_path }}/dynamic/"
+        - "{{ ssl_path }}"
     
-    # Nettoyage complet de l'environnement
     - name: Arrêter et supprimer tous les conteneurs
       shell: |
         docker rm -f $(docker ps -a -q) || true
@@ -54,6 +61,55 @@
       shell: docker network inspect web || docker network create web
       register: web_network_result
       changed_when: "'Created' in web_network_result.stdout"
+
+    - name: Copier les certificats SSL
+      copy:
+        src: "../configs_services/cert/{{ item.src }}"
+        dest: "{{ item.dest }}"
+        mode: '{{ item.mode }}'
+      loop:
+        - { src: "{{ entreprise }}.crt", dest: "{{ ssl_path }}/{{ entreprise }}.crt", mode: '0644' }
+        - { src: "{{ entreprise }}.key", dest: "{{ ssl_path }}/{{ entreprise }}.key", mode: '0600' }
+        - { src: "rootCA.pem", dest: "{{ ca_cert_path }}", mode: '0644' }
+    
+    - name: Mettre à jour les certificats
+      command: update-ca-certificates
+    
+    - name: Configurer Traefik
+      copy:
+        dest: "{{ traefik_path }}/traefik.yml"
+        mode: '0644'
+        content: |
+          entryPoints:
+            web:
+              address: ":80"
+              http:
+                redirections:
+                  entryPoint:
+                    to: websecure
+                    scheme: https
+
+            websecure:
+              address: ":443"
+
+          serversTransport:
+            insecureSkipVerify: true
+
+          providers:
+            file:
+              directory: "/etc/traefik/dynamic"
+              watch: true
+            docker:
+              exposedByDefault: false
+
+          api:
+            dashboard: false
+            insecure: false
+
+          tls:
+            certificates:
+              - certFile: "{{ ssl_path }}/{{ entreprise }}.crt"
+              - keyFile: "{{ ssl_path }}/{{ entreprise }}.key"
 
     - name: Configurer Authelia
       copy:
@@ -119,9 +175,40 @@
                   - "group:gitlab"
                 policy: one_factor
 
+    - name: Ajouter le remote host authelia
+      copy:
+        dest: "{{ traefik_path }}/dynamic/authelia.yml"
+        mode: '0644'
+        content: |
+          http:
+            routers:
+              authelia:
+                rule: "Host(`{{ authelia_domain }}`)"
+                entryPoints:
+                  - websecure
+                service: authelia
+                tls: true
+
+            services:
+              authelia:
+                loadBalancer:
+                  servers:
+                    - url: "http://192.168.30.10:80"
+
+            middlewares:
+              authelia:
+                forwardAuth:
+                  address: "http://192.168.30.10:80/api/authz/forward-auth"
+                  trustForwardHeader: true
+                  authResponseHeaders:
+                    - Remote-User
+                    - Remote-Groups
+                    - Remote-Name
+                    - Remote-Email
+
     - name: Configurer Docker Compose
       copy:
-        dest: "/tmp/docker-compose.yml"
+        dest: "{{ traefik_path }}/docker-compose.yml"
         mode: '0644'
         content: |
           services:
@@ -136,6 +223,20 @@
                 - TZ=Europe/Paris
               ports:
                 - "80:9091"
+
+            traefik:
+              image: traefik:latest
+              container_name: traefik
+              restart: always
+              networks:
+                - web
+              ports:
+                - "8080:443"
+              volumes:
+                - "{{ traefik_path }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+                - "{{ traefik_path }}/dynamic:/etc/traefik/dynamic:ro"
+                - "/etc/ssl/monentreprise:/etc/traefik/certs"
+                - /var/run/docker.sock:/var/run/docker.sock:ro
 
             gitlab:
               image: gitlab/gitlab-ee:latest
@@ -179,14 +280,18 @@
                   gitlab_rails['initial_root_password'] = '{{ lldap_pass }}'
                   gitlab_rails['ldap_create_admin'] = true
                   gitlab_rails['admin_username'] = '{{ lldap_admin }}'
-              ports:
-                - "8080:80"
               volumes:
                 - gitlab_config:/etc/gitlab
                 - gitlab_logs:/var/log/gitlab
                 - gitlab_data:/var/opt/gitlab
               networks:
                 - web
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.gitlab.rule=Host(`{{ gitlab_domain }}`)"
+                - "traefik.http.routers.gitlab.entrypoints=websecure"
+                - "traefik.http.routers.gitlab.tls=true"
+                - "traefik.http.services.gitlab.loadbalancer.server.port=80"
 
           networks:
             web:
@@ -198,9 +303,9 @@
             gitlab_data:
 
     - name: Lancer les conteneurs
-      command: docker compose up -d
+      command: docker compose up --build -d
       args:
-        chdir: "/tmp"
+        chdir: "{{ traefik_path }}"
         
     - name: Attendre que les conteneurs soient prêts
       wait_for:
