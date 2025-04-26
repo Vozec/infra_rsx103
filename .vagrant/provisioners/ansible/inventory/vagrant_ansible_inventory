@@ -6,7 +6,7 @@ vm5 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2205 ansible_ssh_user='vagrant' 
 vm6 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2206 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm6/virtualbox/private_key'
 vm2 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2202 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm2/virtualbox/private_key'
 vm3 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2203 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm3/virtualbox/private_key'
-# MISSING: 'vm8' machine was probably removed without using Vagrant. This machine should be recreated.
+vm8 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2208 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm8/virtualbox/private_key'
 vm0 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2222 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm0/virtualbox/private_key'
 vm7 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2207 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm7/virtualbox/private_key'
 vm1 ansible_ssh_host=127.0.0.1 ansible_ssh_port=2200 ansible_ssh_user='vagrant' ansible_ssh_private_key_file='/home/vozec/Bureau/dev/en_cours/infra_rsx103/.vagrant/machines/vm1/virtualbox/private_key'
