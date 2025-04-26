@@ -7,8 +7,8 @@
     entreprise: "monentreprise"
     fqdn: "{{ entreprise }}.{{ extension }}"
     
-    subdomain: "traefik.{{ entreprise }}.{{ extension }}"
-    authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
+    traefik_domain: "traefik.{{ entreprise }}.{{ extension }}"
+    authelia_domain: "auth.{{ entreprise }}.{{ extension }}"
     peertube_domain: "www.{{ entreprise }}.{{ extension }}"
 
     traefik_path: "/opt/traefik"
@@ -64,64 +64,6 @@
 
     - name: Mettre à jour les certificats
       command: update-ca-certificates
-
-    # - name: Ajouter le remote host gitlab
-    #   copy:
-    #     dest: "{{ traefik_path }}/dynamic/gitlab.yml"
-    #     mode: '0644'
-    #     content: |
-    #       http:
-    #         middlewares:
-    #           gitlab-ip-whitelist:
-    #             ipWhiteList:
-    #               sourceRange:
-    #                 - "192.168.40.0/24"
-    #                 - "192.168.30.0/24"
-
-    #         routers:
-    #           gitlab:
-    #             rule: "Host(`{{ gitlab_domain }}`)"
-    #             entryPoints:
-    #               - websecure
-    #             service: gitlab
-    #             tls: true
-    #             middlewares:
-    #               - gitlab-ip-whitelist
-    #               - authelia
-
-    #         services:
-    #           gitlab:
-    #             loadBalancer:
-    #               servers:
-    #                 - url: "http://192.168.30.10:8080"
-
-    # - name: Ajouter le remote host lldap
-    #   copy:
-    #     dest: "{{ traefik_path }}/dynamic/lldap.yml"
-    #     mode: '0644'
-    #     content: |
-    #       http:
-    #         middlewares:
-    #           lldap-ip-whitelist:
-    #             ipWhiteList:
-    #               sourceRange:
-    #                 - "192.168.40.0/24"
-
-    #         routers:
-    #           lldap:
-    #             rule: "Host(`{{ lldap_domain }}`)"
-    #             entryPoints:
-    #               - websecure
-    #             service: lldap
-    #             tls: true
-    #             middlewares:      
-    #               - lldap-ip-whitelist
-
-    #         services:
-    #           lldap:
-    #             loadBalancer:
-    #               servers:
-    #                 - url: "http://192.168.40.10:443"
 
     - name: Ajouter le remote host authelia
       copy:
@@ -297,7 +239,7 @@
                 - /var/run/docker.sock:/var/run/docker.sock:ro
               labels:
                 - "traefik.enable=true"
-                - "traefik.http.routers.traefik.rule=Host(`{{ subdomain }}`)"
+                - "traefik.http.routers.traefik.rule=Host(`{{ traefik_domain }}`)"
                 - "traefik.http.routers.traefik.entrypoints=websecure"
                 - "traefik.http.routers.traefik.tls=true"
                 - "traefik.http.routers.traefik.service=api@internal"

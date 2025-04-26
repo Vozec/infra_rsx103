@@ -1,0 +1,71 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+
+  children:
+    agents:
+      hosts:
+        Interne:
+          ansible_host: 192.168.30.10
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        FW1:
+          ansible_host: 192.168.30.30
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        Admin:
+          ansible_host: 192.168.40.10
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        VPN_ADMIN:
+          ansible_host: 192.168.40.20
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        DNS:
+          ansible_host: 192.168.20.40
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        Exposées:
+          ansible_host: 192.168.20.10
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        VPN_INTERNE:
+          ansible_host: 192.168.20.20
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
+        FW2:
+          ansible_host: 192.168.20.50
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become_method: sudo
+          ansible_become_password: vagrant

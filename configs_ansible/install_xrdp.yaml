@@ -1,0 +1,40 @@
+---
+- name: Installer RDP et configurer XFCE4 avec clavier FR
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Mettre à jour les paquets
+      apt:
+        update_cache: yes
+
+    - name: Installer xrdp
+      apt:
+        name: xrdp
+        state: present
+
+    - name: Installer XFCE4 et ses goodies
+      apt:
+        name:
+          - xfce4
+          - xfce4-goodies
+        state: present
+
+    - name: Créer le fichier .xsession pour démarrer xfce4
+      copy:
+        dest: "/home/vagrant/.xsession"
+        content: "startxfce4\n"
+        owner: "vagrant"
+        group: "vagrant"
+        mode: '0755'
+
+    - name: Supprimer le fichier .Xauthority s'il existe
+      file:
+        path: "/home/vagrant/.Xauthority"
+        state: absent
+
+    - name: Activer le service xrdp
+      systemd:
+        name: xrdp
+        enabled: true
+        state: started

@@ -6,10 +6,12 @@
     extension: "com"
     entreprise: "monentreprise"
     fqdn: "{{ entreprise }}.{{ extension }}"
-    subdomain: "traefik.{{ entreprise }}.{{ extension }}"
+
+    traefik_domain: "traefik.{{ entreprise }}.{{ extension }}"
+    traefik2_domain: "traefik2.{{ entreprise }}.{{ extension }}"
+
     gitlab_domain: "gitlab.{{ entreprise }}.{{ extension }}"
-    authelia_domain: "authelia.{{ entreprise }}.{{ extension }}"
-    web_domain: "www.{{ entreprise }}.{{ extension }}"
+    authelia_domain: "auth2.{{ entreprise }}.{{ extension }}"
     
     ca_cert_path: "/usr/local/share/ca-certificates/mkcert.crt"
     traefik_path: "/opt/traefik"
@@ -103,7 +105,7 @@
               exposedByDefault: false
 
           api:
-            dashboard: false
+            dashboard: true
             insecure: false
 
           tls:
@@ -151,8 +153,7 @@
             inactivity: 300
             cookies:
               - domain: "{{ fqdn }}"
-                authelia_url: "https://{{ authelia_domain }}"
-                default_redirection_url: "https://{{ web_domain }}"
+                authelia_url: "https://{{ authelia_domain }}:8080"
 
           storage:
             local:
@@ -166,7 +167,11 @@
           access_control:
             default_policy: deny
             rules:
-              - domain: "{{ subdomain }}"
+              - domain: "{{ traefik_domain }}"
+                subject:
+                  - "group:admins"
+                policy: one_factor
+              - domain: "{{ traefik2_domain }}"
                 subject:
                   - "group:admins"
                 policy: one_factor
@@ -237,7 +242,14 @@
                 - "{{ traefik_path }}/dynamic:/etc/traefik/dynamic:ro"
                 - "/etc/ssl/monentreprise:/etc/traefik/certs"
                 - /var/run/docker.sock:/var/run/docker.sock:ro
-
+              labels:
+                - "traefik.enable=true"
+                - "traefik.http.routers.traefik.rule=Host(`{{ traefik2_domain }}`)"
+                - "traefik.http.routers.traefik.entrypoints=websecure"
+                - "traefik.http.routers.traefik.tls=true"
+                - "traefik.http.routers.traefik.service=api@internal"
+                - "traefik.http.routers.traefik.middlewares=authelia@file"
+                
             gitlab:
               image: gitlab/gitlab-ee:latest
               container_name: gitlab
@@ -291,6 +303,7 @@
                 - "traefik.http.routers.gitlab.rule=Host(`{{ gitlab_domain }}`)"
                 - "traefik.http.routers.gitlab.entrypoints=websecure"
                 - "traefik.http.routers.gitlab.tls=true"
+                - "traefik.http.routers.gitlab.middlewares=authelia@file"
                 - "traefik.http.services.gitlab.loadbalancer.server.port=80"
 
           networks:
@@ -307,6 +320,6 @@
       args:
         chdir: "{{ traefik_path }}"
         
-    - name: Attendre que les conteneurs soient prêts
-      wait_for:
-        timeout: 30
+    # - name: Attendre que les conteneurs soient prêts
+    #   wait_for:
+    #     timeout: 30

@@ -33,10 +33,6 @@ done
 sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.0/24 -j REJECT
 sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.10.0/24 -j REJECT
 
-# Autorise uniquement le VPN (port custom 999) à aller de public à Admin
-sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.40.0/24 -p udp --dport 999 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.40.0/24 -j REJECT
-
 # Sauvegarder les règles iptables
 sudo mkdir -p /etc/iptables
 sudo sh -c 'iptables-save > /etc/iptables/rules.v4'

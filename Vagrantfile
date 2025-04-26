@@ -17,11 +17,15 @@ Vagrant.configure("2") do |config|
       ansible.playbook = "configs_ansible/install_ldap.yaml"
       ansible.verbose = "v"
     end
+    vm0.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
     vm0.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.10.0/24 via 192.168.40.30
       sudo ip route add 192.168.20.0/24 via 192.168.40.30
       sudo ip route add 192.168.30.0/24 via 192.168.40.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
@@ -33,21 +37,54 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.cpus = 1
     end
+    vm1.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
+    vm1.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
     vm1.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.10.0/24 via 192.168.40.30
       sudo ip route add 192.168.20.0/24 via 192.168.40.30
       sudo ip route add 192.168.30.0/24 via 192.168.40.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
+
+  # VM1 bis -- ELK + Fleet
+  config.vm.define "vmbis" do |vmbis|
+    vmbis.vm.hostname = "elk"
+    vmbis.vm.network "private_network", ip: "192.168.40.14"
+    vmbis.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+      vb.cpus = 1
+    end
+    vmbis.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
+    vmbis.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
+      sudo ip route add 192.168.10.0/24 via 192.168.40.30
+      sudo ip route add 192.168.20.0/24 via 192.168.40.30
+      sudo ip route add 192.168.30.0/24 via 192.168.40.30
+    SHELL
+    vmbis.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
+  end
+
 
   # VM2 - Services internes
   config.vm.define "vm2" do |vm2|
     vm2.vm.hostname = "services"
     vm2.vm.network "private_network", ip: "192.168.30.10"
     vm2.vm.provider "virtualbox" do |vb|
-      vb.memory = "4096"
-      vb.cpus = 1
+      vb.memory = "2048"
+      vb.cpus = 2
     end
     vm2.vm.provision "ansible" do |ansible|
       ansible.playbook = "configs_ansible/install_docker.yaml"
@@ -58,11 +95,15 @@ Vagrant.configure("2") do |config|
       ansible.verbose = "v"
     end
     vm2.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.10.0/24 via 192.168.30.30
       sudo ip route add 192.168.20.0/24 via 192.168.30.30
       sudo ip route add 192.168.40.0/24 via 192.168.30.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
+    vm2.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
   end
 
   # VM3 - Firewall: Interne <-> Admin <-> DMZ 
@@ -72,13 +113,21 @@ Vagrant.configure("2") do |config|
     vm3.vm.network "private_network", ip: "192.168.20.30"
     vm3.vm.network "private_network", ip: "192.168.40.30"
     vm3.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
+      vb.memory = "512"
       vb.cpus = 1
+    end
+    vm3.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
     end
     vm3.vm.provision "shell", path: "./configs_firewalls/setup_internal.sh"
     vm3.vm.provision "shell", inline: <<-SHELL
       echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
+    vm3.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
   end
 
   # VM4 - Services exposés 
@@ -88,7 +137,7 @@ Vagrant.configure("2") do |config|
     vm4.vm.network "private_network", ip: "192.168.20.10"
     vm4.vm.provider "virtualbox" do |vb|
       vb.memory = "2048"
-      vb.cpus = 1
+      vb.cpus = 2
     end
     vm4.vm.provision "ansible" do |ansible|
       ansible.playbook = "configs_ansible/install_docker.yaml"
@@ -99,11 +148,15 @@ Vagrant.configure("2") do |config|
       ansible.verbose = "v"
     end
     vm4.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.10.0/24 via 192.168.20.50
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
+    vm4.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
   end
   
   # VM5 - OpenVPN interne
@@ -114,12 +167,20 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.cpus = 1
     end
+    vm5.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
     vm5.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.10.0/24 via 192.168.20.50
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
+    vm5.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
   end
 
   # VM6 - DNS
@@ -130,12 +191,20 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.cpus = 1
     end
-    vm6.vm.provision "shell", path: "./configs_services/setup_dns.sh"
+    vm6.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
     vm6.vm.provision "shell", inline: <<-SHELL
       sudo ip route add 192.168.10.0/24 via 192.168.20.50
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
     SHELL
+    vm6.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
+    vm6.vm.provision "shell", path: "./configs_services/setup_dns.sh"
   end
 
   # VM7 - Firewall DMZ <-> Public
@@ -147,11 +216,19 @@ Vagrant.configure("2") do |config|
       vb.memory = "512"
       vb.cpus = 1
     end
+    vm7.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
     vm7.vm.provision "shell", path: "./configs_firewalls/setup_front.sh"
+    vm7.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
     vm7.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.30.0/24 via 192.168.20.30
       sudo ip route add 192.168.40.0/24 via 192.168.20.30
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
     SHELL
   end
 
@@ -166,11 +243,23 @@ Vagrant.configure("2") do |config|
     vm8.vm.provision "shell", inline: <<-SHELL
       sudo apt-get update -y --fix-missing &&  apt-get install -y curl nmap inetutils-traceroute
     SHELL
+    vm8.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_xrdp.yaml"
+      ansible.verbose = "v"
+    end
+    vm8.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_ansible/install_docker.yaml"
+      ansible.verbose = "v"
+    end
+    vm8.vm.provision "ansible" do |ansible|
+      ansible.playbook = "configs_services/setup_ssh.yaml"
+      ansible.verbose = "v"
+    end
     vm8.vm.provision "shell", inline: <<-SHELL
+      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
       sudo ip route add 192.168.20.0/24 via 192.168.10.50
       sudo ip route add 192.168.30.0/24 via 192.168.10.50
-      sudo ip route add 192.168.40.0/24 via 192.168.10.50
-      echo "nameserver 192.168.20.40" | sudo tee /etc/resolv.conf > /dev/null
+      sudo ip route add 192.168.40.0/24 via 192.168.10.50      
     SHELL
   end
 end

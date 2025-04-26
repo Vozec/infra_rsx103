@@ -19,11 +19,10 @@ vagrant provision vm2
 vagrant provision vm3
 ```
 
-## Récupération du mdp peertube
+## Setup de l'infra
 
 ```bash
-vagrant ssh vm4 -c "docker compose -f /opt/traefik/docker-compose.yml logs peertube | grep -A1 root"
-WARN[0000] /opt/traefik/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion 
-peertube-1  | [www.monentreprise.com:443] 2025-04-24 16:04:29.486 info: Username: root
-peertube-1  | [www.monentreprise.com:443] 2025-04-24 16:04:29.486 info: User password: saquserusufejugi
+$ vagrant up
+$ ansible-playbook -i ./configs_services/inventory.yaml ./configs_ansible/install_elk.yaml
+$ vagrant ssh vm4 -c "docker compose -f /opt/traefik/docker-compose.yml logs peertube | grep -A1 root"
 ```

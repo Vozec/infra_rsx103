@@ -1,0 +1,294 @@
+- name: Déploiement complet ELK + Fleet + Agent
+  hosts: all
+  become: yes
+  vars:
+    kibana_ip : "192.168.40.14" #IP DU SERVEUR
+    elastic_version: "9.0.0" 
+    docker_elk_repo: "https://github.com/deviantony/docker-elk.git"
+    
+
+  tasks:
+ ##DEBUG
+    - name: Nettoyer les anciens conteneurs et volumes
+      shell: |
+          docker rm -f $(docker ps -aq) || true
+          docker volume rm $(docker volume ls -q) || true
+      ignore_errors: true
+
+    - name: Supprimer répertoire LLDAP
+      file:
+        path: "/opt/docker-elk"
+        state: absent
+      ignore_errors: true
+
+  ##CODE 
+
+    - name: Installer les dépendances nécessaires
+      apt:
+        name:
+          - sshpass
+          - jq
+        state: present
+        update_cache: yes
+
+    - name: Ajouter utilisateur actuel au groupe docker
+      user:
+        name: "{{ ansible_user_id }}"
+        groups: docker
+        append: yes
+
+    - name: Cloner le repo docker-elk
+      git:
+        repo: "{{ docker_elk_repo }}"
+        dest: /opt/docker-elk
+        force: yes
+
+    - name: setup docker-elk (via shell)
+      shell: |
+        cd /opt/docker-elk
+        docker compose up setup
+
+    - name: Corriger l'URL du APM Server dans kibana.yml
+      replace:
+        path: /opt/docker-elk/kibana/config/kibana.yml
+        regexp: 'value: http://apm-server:8200'
+        replace: 'value: http://{{ kibana_ip }}:8200'
+
+    - name: Remplacer "elasticsearch" par l'IP dans kibana.yml
+      ansible.builtin.replace:
+        path: /opt/docker-elk/kibana/config/kibana.yml
+        regexp: 'http://elasticsearch:9200'
+        replace: 'http://{{ kibana_ip }}:9200'
+
+    - name: Corriger la config Fleet dans kibana.yml
+      replace:
+        path: /opt/docker-elk/kibana/config/kibana.yml
+        regexp: 'xpack.fleet.agents.fleet_server.hosts: \[.*\]'
+        replace: 'xpack.fleet.agents.fleet_server.hosts: [ "http://{{ kibana_ip }}:8220" ]'
+
+    - name: Corriger la config APM dans kibana.yml
+      replace:
+        path: /opt/docker-elk/kibana/config/kibana.yml
+        regexp: 'xpack.fleet.agents.fleet_server.hosts: \[.*\]'
+        replace: 'xpack.fleet.agents.fleet_server.hosts: [ "http://{{ kibana_ip }}:8220" ]'
+
+    - name: Générer une encryption key pour Kibana
+      shell: "openssl rand -hex 32"
+      register: encryption_key
+
+    - name: Ajouter encryptionKey dans kibana.yml
+      lineinfile:
+        path: /opt/docker-elk/kibana/config/kibana.yml
+        line: "xpack.encryptedSavedObjects.encryptionKey: \"{{ encryption_key.stdout }}\""
+        create: yes
+        insertafter: EOF
+
+    - name: Redémarrer le conteneur Kibana
+      shell: docker compose restart kibana
+      args:
+        chdir: /opt/docker-elk
+
+    - name: Modifier FLEET_SERVER_HOST pour écouter sur 0.0.0.0
+      replace:
+        path: /opt/docker-elk/extensions/fleet/fleet-compose.yml
+        regexp: 'FLEET_SERVER_HOST: .*'
+        replace: 'FLEET_SERVER_HOST: 0.0.0.0'
+
+    - name: Ajouter FLEET_SERVER_BIND à 0.0.0.0 si absent
+      lineinfile:
+        path: /opt/docker-elk/extensions/fleet/fleet-compose.yml
+        line: '      FLEET_SERVER_BIND: 0.0.0.0'
+        insertafter: 'FLEET_SERVER_HOST: 0.0.0.0'
+
+
+    - name: Lancer docker-elk + Fleet Server (via docker compose)
+      shell: |
+        cd /opt/docker-elk
+        docker compose -f docker-compose.yml -f extensions/fleet/fleet-compose.yml up -d
+      args:
+        chdir: /opt/docker-elk
+
+    - name: Attendre que Kibana soit prêt
+      uri:
+        url: "http://localhost:5601/api/status"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 30
+      delay: 10
+      
+    - name: Initialiser Fleet avec curl
+      shell: |
+        curl -u elastic:changeme -X POST "http://localhost:5601/api/fleet/setup" \
+          -H 'Content-Type: application/json' \
+          -H 'kbn-xsrf: true'
+      register: fleet_setup_result
+      until: fleet_setup_result.rc == 0
+      retries: 10
+      delay: 5
+
+    - name: Modifier les Fleet Server Hosts dans Kibana (via curl)
+      shell: |
+        curl -s -X PUT "http://localhost:5601/api/fleet/settings" \
+          -u elastic:changeme \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "fleet_server_hosts": ["http://{{ kibana_ip }}:8220"]
+          }'
+      register: update_fleet_settings
+      until: update_fleet_settings.rc == 0
+      retries: 5
+      delay: 5
+
+
+    - name: Créer une policy Fleet Server avec curl
+      shell: |
+        curl -s -X POST "http://localhost:5601/api/fleet/agent_policies" \
+          -u elastic:changeme \
+          -H 'Content-Type: application/json' \
+          -H 'kbn-xsrf: true' \
+          -d '{
+            "name": "Fleet Server Policy",
+            "namespace": "default",
+            "monitoring_enabled": ["logs", "metrics"]
+          }' > /tmp/create_policy_result.json
+      args:
+        executable: /bin/bash
+
+    - name: Récupérer toutes les policies Fleet existantes
+      shell: |
+        curl -s -u elastic:changeme -X GET "http://localhost:5601/api/fleet/agent_policies" -H 'kbn-xsrf: true'
+      register: all_policies_response
+      args:
+        executable: /bin/bash
+
+    - name: Extraire l'ID de la Agent Policy APM Server
+      set_fact:
+        agent_policy_id: "{{ (all_policies_response.stdout | from_json)['items'] | selectattr('name', 'equalto', 'Agent Policy APM Server') | map(attribute='id') | list | first }}"
+
+    - name: Créer un enrollment token pour Agent Policy APM Server
+      shell: |
+        curl -u elastic:changeme -X POST "http://localhost:5601/api/fleet/enrollment_api_keys" \
+          -H 'kbn-xsrf: true' \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "name": "apmserver-enrollment-token",
+            "policy_id": "{{ agent_policy_id }}"
+          }'
+      register: enrollment_token_response
+      until: enrollment_token_response.rc == 0
+      retries: 5
+      delay: 5
+
+    - name: Extraire le token depuis la réponse curl
+      set_fact:
+        enrollment_token: "{{ enrollment_token_response.stdout | from_json | json_query('item.api_key') }}"
+
+    - name: Afficher le token récupéré
+      debug:
+        msg: "Enrollment token récupéré: {{ enrollment_token }}"
+
+## REGLES DE DETECTION 
+- name: Créer toutes les règles de détection via cURL
+  hosts: localhost
+  gather_facts: false
+  vars:
+    kibana_host: "192.168.40.14" # IP DU SERVEUR
+  tasks:
+
+    - name: Détection d'erreurs système critiques
+      shell: >
+        curl -k -u elastic:changeme
+        -X POST "http://{{ kibana_host }}:5601/api/alerting/rule"
+        -H "kbn-xsrf: true"
+        -H "Content-Type: application/json"
+        --data '{"params":{"index":["logs-*"],"timeField":"@timestamp","esQuery":"{\"query\":{\"bool\":{\"should\":[{\"query_string\":{\"query\":\"message:(\\\"kernel panic\\\" OR \\\"oom-killer\\\" OR \\\"segfault\\\" OR \\\"disk failure\\\")\"}}]}}}","size":100,"threshold":[0],"thresholdComparator":">","timeWindowSize":1,"timeWindowUnit":"m"},"consumer":"alerts","rule_type_id":".es-query","schedule":{"interval":"1m"},"name":"Erreur système critique détectée","tags":["système","erreur","critique"],"actions":[]}'
+
+    - name: Détection de redémarrages multiples
+      shell: >
+        curl -k -u elastic:changeme
+        -X POST "http://{{ kibana_host }}:5601/api/alerting/rule"
+        -H "kbn-xsrf: true"
+        -H "Content-Type: application/json"
+        --data '{"params":{"index":["logs-*"],"timeField":"@timestamp","esQuery":"{\"query\":{\"match_phrase\":{\"message\":\"reboot\"}}}","size":100,"threshold":[2],"thresholdComparator":">","timeWindowSize":24,"timeWindowUnit":"h"},"consumer":"alerts","rule_type_id":".es-query","schedule":{"interval":"5m"},"name":"Détection de redémarrages multiples","tags":["système","reboot"],"actions":[]}'
+
+    - name: Surveillance de la charge CPU
+      shell: >
+        curl -k -u elastic:changeme
+        -X POST "http://{{ kibana_host }}:5601/api/alerting/rule"
+        -H "kbn-xsrf: true"
+        -H "Content-Type: application/json"
+        --data '{"params":{"index":["metrics-*"],"timeField":"@timestamp","esQuery":"{\"query\":{\"range\":{\"system.cpu.total.norm.pct\":{\"gte\":0.85}}}}","size":1,"threshold":[0],"thresholdComparator":">","timeWindowSize":5,"timeWindowUnit":"m"},"consumer":"alerts","rule_type_id":".es-query","schedule":{"interval":"1m"},"name":"Surveillance de la charge CPU","tags":["performance","cpu"],"actions":[]}'
+
+    - name: Surveillance de l'utilisation de la mémoire RAM
+      shell: >
+        curl -k -u elastic:changeme
+        -X POST "http://{{ kibana_host }}:5601/api/alerting/rule"
+        -H "kbn-xsrf: true"
+        -H "Content-Type: application/json"
+        --data '{"params":{"index":["metrics-*"],"timeField":"@timestamp","esQuery":"{\"query\":{\"range\":{\"system.memory.used.pct\":{\"gte\":0.9}}}}","size":1,"threshold":[0],"thresholdComparator":">","timeWindowSize":5,"timeWindowUnit":"m"},"consumer":"alerts","rule_type_id":".es-query","schedule":{"interval":"1m"},"name":"Surveillance de la mémoire RAM","tags":["performance","mémoire"],"actions":[]}'
+
+    - name: Détection d'une machine arrêtée
+      shell: |
+        curl -k -u elastic:changeme \
+          -X POST "http://{{ kibana_host }}:5601/api/alerting/rule" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          --data "{\"params\":{\"index\":[\"logs-*\"],\"timeField\":\"@timestamp\",\"esQuery\":\"{\\\"query\\\":{\\\"match_all\\\":{}}}\",\"size\":1,\"threshold\":[0],\"thresholdComparator\":\"<\",\"timeWindowSize\":1,\"timeWindowUnit\":\"m\"},\"consumer\":\"alerts\",\"rule_type_id\":\".es-query\",\"schedule\":{\"interval\":\"1m\"},\"name\":\"Détection d'une machine arrêtée\",\"tags\":[\"système\",\"inactivité\"],\"actions\":[]}"
+
+    - name: Surveillance de l'espace disque
+      shell: |
+        curl -k -u elastic:changeme \
+          -X POST "http://{{ kibana_host }}:5601/api/alerting/rule" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          --data "{\"params\":{\"index\":[\"metrics-*\"],\"timeField\":\"@timestamp\",\"esQuery\":\"{\\\"query\\\":{\\\"range\\\":{\\\"system.filesystem.available.pct\\\":{\\\"lte\\\":0.1}}}}\",\"size\":1,\"threshold\":[0],\"thresholdComparator\":\"<\",\"timeWindowSize\":5,\"timeWindowUnit\":\"m\"},\"consumer\":\"alerts\",\"rule_type_id\":\".es-query\",\"schedule\":{\"interval\":\"1m\"},\"name\":\"Surveillance de l'espace disque\",\"tags\":[\"stockage\",\"disque\"],\"actions\":[]}"
+
+    - name: Surveillance de l'utilisation du swap
+      shell: |
+        curl -k -u elastic:changeme \
+          -X POST "http://{{ kibana_host }}:5601/api/alerting/rule" \
+          -H "kbn-xsrf: true" \
+          -H "Content-Type: application/json" \
+          --data "{\"params\":{\"index\":[\"metrics-*\"],\"timeField\":\"@timestamp\",\"esQuery\":\"{\\\"query\\\":{\\\"range\\\":{\\\"system.memory.swap.used.pct\\\":{\\\"gte\\\":0.2}}}}\",\"size\":1,\"threshold\":[0],\"thresholdComparator\":\">\",\"timeWindowSize\":5,\"timeWindowUnit\":\"m\"},\"consumer\":\"alerts\",\"rule_type_id\":\".es-query\",\"schedule\":{\"interval\":\"1m\"},\"name\":\"Surveillance de l'utilisation du swap\",\"tags\":[\"mémoire\",\"swap\"],\"actions\":[]}"
+
+
+##PARTIE REMOTE
+
+- name: Installer l'agent Elastic sur machine distante
+  hosts: agents
+  become: yes
+  vars:
+    enrollment_token: "{{ hostvars['localhost']['enrollment_token'] }}"
+    kibana_ip: "192.168.40.14" # ADRESSE IP DU SERVEUR
+    elastic_version: "9.0.0"
+
+  tasks:
+    - name: Installer curl et unzip
+      apt:
+        name: [curl, unzip]
+        state: present
+        update_cache: yes
+
+    - name: Télécharger l'agent Elastic
+      get_url:
+        url: "https://artifacts.elastic.co/downloads/beats/elastic-agent/elastic-agent-{{ elastic_version }}-linux-x86_64.tar.gz"
+        dest: /tmp/elastic-agent.tar.gz
+
+    - name: Extraire l'archive
+      unarchive:
+        src: /tmp/elastic-agent.tar.gz
+        dest: /opt/
+        remote_src: yes
+
+    - name: Enroll l'agent dans Fleet
+      shell: |
+        cd /opt/elastic-agent-{{ elastic_version }}-linux-x86_64
+        ./elastic-agent install \
+          --url=http://{{ kibana_ip }}:8220 \
+          --enrollment-token={{ enrollment_token }} \
+          --insecure \
+          --force
+      args:
+        creates: /opt/Elastic/Agent
