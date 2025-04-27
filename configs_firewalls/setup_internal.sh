@@ -22,47 +22,39 @@ sudo iptables -t nat -A POSTROUTING -o enp0s10 -j MASQUERADE
 # Autoriser les connexions déjà établies ou liées
 sudo iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-# .20 et .30 | 80(Authelia) | 443(Traefik) | 53 (DNS)
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p tcp --dport 80 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p tcp --dport 80 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p tcp --dport 443 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p tcp --dport 443 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.40 -p udp --dport 53 -j ACCEPT
+# .20 et .30
+sudo iptables -A FORWARD -s 192.168.20.10 -d 192.168.30.10 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.10 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.10 -d 192.168.30.10 -p tcp --dport 443 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.10 -p tcp --dport 443 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.40 -p udp --dport 53 -j ACCEPT
 
-# .20 et .40 | 80(Authelia) | 443(Traefik) | 53 (DNS)
-#sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 80 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 80 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 443 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 443 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.40 -p udp --dport 53 -j ACCEPT
+# .20 et .40
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.10 -p tcp --dport 80 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.10 -p tcp --dport 443 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.40 -p udp --dport 53 -j ACCEPT
 
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 9200 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 9200 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p tcp --dport 8220 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 8220 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.14 -p tcp --dport 9200 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.14 -p tcp --dport 8220 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 22 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.20.20 -d 192.168.40.10 -p tcp --dport 389 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.20.20 -d 192.168.40.10.20 -p udp --dport 1194 -j ACCEPT
 
-# .30 et .40 | 8080(Gitlab)
-#sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p tcp --dport 8080 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp --dport 8080 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p tcp --dport 389 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp --dport 389 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p tcp --dport 9200 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp --dport 9200 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p tcp --dport 8220 -j ACCEPT
-#sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp --dport 8220 -j ACCEPT
+# .30 et .40
+sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.10 -p tcp --dport 8080 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.10 -p tcp --dport 389 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.14 -p tcp --dport 9200 -j ACCEPT
+sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.14 -p tcp --dport 8220 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p tcp --dport 22 -j ACCEPT
 
+
 # (DEBUG) Autoriser ICMP entre tous les réseaux
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p icmp -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p icmp -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p icmp -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p icmp -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p icmp -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p icmp -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.30.0/24 -p icmp -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.0/24 -p icmp -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.0/24 -p icmp -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p icmp -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -p icmp -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.0/24 -p icmp -j ACCEPT
 
 # Bloquer explicitement tout autre trafic
 sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.40.0/24 -j REJECT

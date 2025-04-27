@@ -20,14 +20,9 @@ sudo iptables -t nat -A POSTROUTING -o enp0s8 -j MASQUERADE
 # Autoriser les connexions déjà établies ou liées
 sudo iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-# Autoriser uniquement certains ports entre réseau Public (192.168.10.0/24) et DMZ (192.168.20.0/24)
-ALLOWED=( "443/tcp" "53/udp" "1194/udp" )
-
-for rule in "${ALLOWED[@]}"; do
-    IFS="/" read port proto <<< "$rule"
-    sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.0/24 -p $proto --dport $port -j ACCEPT # Public → DMZ    
-    sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.10.0/24 -p $proto --dport $port -j ACCEPT # DMZ → Public
-done
+sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.10 -p tcp --dport 443 -j ACCEPT 
+sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.40 -p udp --dport 53 -j ACCEPT 
+sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.20 -p udp --dport 1194 -j ACCEPT 
 
 # Bloquer explicitement tout autre trafic entre Public et DMZ
 sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.0/24 -j REJECT
