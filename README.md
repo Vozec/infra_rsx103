@@ -24,6 +24,6 @@ vagrant provision vm3
 ```bash
 $ vagrant up
 $ ansible-playbook -i ./configs_services/inventory.yaml ./configs_ansible/install_elk.yaml
-$ vagrant ssh vm4 -c "docker compose -f /opt/traefik/docker-compose.yml logs peertube | grep -A1 root"
+$ vagrant ssh services_dmz -c "docker compose -f /opt/traefik/docker-compose.yml logs peertube | grep -A1 root"
 $ vagrant ssh openvpn_dmz -c 'cat /opt/openvpn/openvpn/client-interne.ovpn' > client-interne.ovpn
 ```
