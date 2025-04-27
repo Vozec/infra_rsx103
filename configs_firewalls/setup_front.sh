@@ -22,7 +22,11 @@ sudo iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.10 -p tcp --dport 443 -j ACCEPT 
 sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.40 -p udp --dport 53 -j ACCEPT 
+
 sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.20 -p udp --dport 1194 -j ACCEPT 
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.20.20 -p udp --dport 1194 -j ACCEPT 
+sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.20 -p tcp --dport 1194 -j ACCEPT 
+sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.20.20 -p tcp --dport 1194 -j ACCEPT 
 
 # Bloquer explicitement tout autre trafic entre Public et DMZ
 sudo iptables -A FORWARD -s 192.168.10.0/24 -d 192.168.20.0/24 -j REJECT

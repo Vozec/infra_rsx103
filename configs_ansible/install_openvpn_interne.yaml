@@ -1,300 +1,241 @@
-  - name: Déployer OpenVPN avec authentification LDAP
-    hosts: vpn_interne
-    become: true
+- name: Déployer OpenVPN avec authentification LDAP
+  hosts: all
+  become: true
 
-    vars:
-      # Infos domaine
-      extension: "com"
-      entreprise: "monentreprise"
-      fqdn: "{{ entreprise }}.{{ extension }}"
+  vars:
+    extension: "com"
+    entreprise: "monentreprise"
+    fqdn: "{{ entreprise }}.{{ extension }}"
 
-      # Chemins
-      openvpn_path: "/opt/openvpn/openvpn"
-      cert_path: "/opt/openvpn/cert"
+    openvpn_path: "/opt/openvpn/openvpn"
+    cert_path: "/opt/openvpn/cert"
 
-      # LDAP
-      ldap_host: "192.168.40.10"
-      ldap_port: "389"
-      ldap_admin_dn: "cn=admin,dc={{ entreprise }},dc={{ extension }}"
-      ldap_admin_password: "password"
-      ldap_base_dn: "dc={{ entreprise }},dc={{ extension }}"
+    ldap_host: "192.168.40.10"
+    ldap_port: "389"
+    ldap_admin_dn: "cn=admin,dc={{ entreprise }},dc={{ extension }}"
+    ldap_admin_password: "password"
+    ldap_base_dn: "dc={{ entreprise }},dc={{ extension }}"
 
-      # OpenVPN (interne uniquement)
-      openvpn_interne_port: "1194"
-      openvpn_interne_subnet: "10.8.0.0"
-      openvpn_interne_netmask: "255.255.255.0"
+    openvpn_interne_port: "1194"
+    openvpn_interne_subnet: "10.8.0.0"
+    openvpn_interne_netmask: "255.255.255.0"
 
-      # Utilisateurs de test
-      test_users:
-        - { username: "user1", password: "password1", group: "VPN_INTERNE" }
+    test_users:
+      - { username: "user1", password: "password1", group: "VPN_INTERNE" }
 
-    tasks:
-      - name: Créer les dossiers nécessaires pour OpenVPN
-        file:
-          path: "{{ item }}"
-          state: directory
-          mode: '0755'
-        loop:
-          - "{{ openvpn_path }}"
-          - "{{ openvpn_path }}/interne/config"
-          - "{{ openvpn_path }}/interne/data"
-          - "{{ openvpn_path }}/clients"
-          - "{{ cert_path }}"
+  tasks:
+    - name: Créer les dossiers nécessaires pour OpenVPN
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ openvpn_path }}"
+        - "{{ openvpn_path }}/interne/config"
+        - "{{ openvpn_path }}/interne/data"
+        - "{{ openvpn_path }}/clients"
+        - "{{ cert_path }}"
 
-      - name: Vérifier que le réseau Docker "lldap" existe
-        shell: docker network inspect lldap || docker network create lldap
-        register: lldap_network_result
-        changed_when: "'Created' in lldap_network_result.stdout"
+    - name: Vérifier que le réseau Docker "lldap" existe
+      shell: docker network inspect lldap || docker network create lldap
+      register: lldap_network_result
+      changed_when: "'Created' in lldap_network_result.stdout"
 
-      - name: Vérifier que LDAP est accessible
-        wait_for:
-          host: "{{ ldap_host}}"
-          port: "{{ ldap_port }}"
-          timeout: 30
-        ignore_errors: true
-        register: ldap_check
+    - name: Vérifier que LDAP est accessible
+      wait_for:
+        host: "{{ ldap_host }}"
+        port: "{{ ldap_port }}"
+        timeout: 30
+      ignore_errors: true
+      register: ldap_check
 
-      - name: Installer OpenVPN (pour générer les clés TLS-Auth locales)
-        apt:
-          name: openvpn
-          state: present
-          update_cache: yes
+    - name: Installer OpenVPN (utile pour générer des clés locales si besoin)
+      apt:
+        name: openvpn
+        state: present
+        update_cache: yes
 
-      - name: Nettoyer les éventuelles anciennes configs/containers
-        shell: |
-          docker rm -f openvpn-interne || true
-          rm -rf {{ openvpn_path }}/interne/config/*
-        ignore_errors: true
+    - name: Nettoyer les anciennes configurations OpenVPN
+      shell: |
+        docker rm -f openvpn-interne || true
+        rm -rf {{ openvpn_path }}/interne/config/*
+      ignore_errors: true
 
-      - name: Initialiser OpenVPN INTERNE (ovpn_env.sh)
-        shell: |
-          cat > {{ openvpn_path }}/interne/config/ovpn_env.sh << EOF
-          declare -x OVPN_AUTH="SHA256"
-          declare -x OVPN_CIPHER="AES-256-CBC"
-          declare -x OVPN_CLIENT_TO_CLIENT="false"
-          declare -x OVPN_CN="{{ fqdn }}"
-          declare -x OVPN_COMP_LZO="false"
-          declare -x OVPN_DEFROUTE="1"
-          declare -x OVPN_DEVICE="tun"
-          declare -x OVPN_DNS="1"
-          declare -x OVPN_ENV="/etc/openvpn/ovpn_env.sh"
-          declare -x OVPN_PORT="{{ openvpn_interne_port }}"
-          declare -x OVPN_PROTO="udp"
-          declare -x OVPN_PUSH="route 192.168.20.0 255.255.255.0"
-          declare -x OVPN_SERVER="{{ openvpn_interne_subnet }}/24"
-          declare -x OVPN_SERVER_URL="udp://{{ fqdn }}:{{ openvpn_interne_port }}"
-          EOF
-          chmod 755 {{ openvpn_path }}/interne/config/ovpn_env.sh
-        args:
-          creates: "{{ openvpn_path }}/interne/config/ovpn_env.sh"
+    - name: Créer fichier ovpn_env.sh pour config OpenVPN
+      shell: |
+        cat > {{ openvpn_path }}/interne/config/ovpn_env.sh << EOF
+        declare -x OVPN_AUTH="SHA256"
+        declare -x OVPN_CIPHER="AES-256-CBC"
+        declare -x OVPN_CLIENT_TO_CLIENT="false"
+        declare -x OVPN_CN="{{ fqdn }}"
+        declare -x OVPN_COMP_LZO="false"
+        declare -x OVPN_DEFROUTE="1"
+        declare -x OVPN_DEVICE="tun"
+        declare -x OVPN_DNS="1"
+        declare -x OVPN_ENV="/etc/openvpn/ovpn_env.sh"
+        declare -x OVPN_PORT="{{ openvpn_interne_port }}"
+        declare -x OVPN_PROTO="udp"
+        declare -x OVPN_PUSH="route 192.168.20.0 255.255.255.0"
+        declare -x OVPN_SERVER="{{ openvpn_interne_subnet }}/24"
+        declare -x OVPN_SERVER_URL="udp://{{ fqdn }}:{{ openvpn_interne_port }}"
+        EOF
+        chmod 755 {{ openvpn_path }}/interne/config/ovpn_env.sh
+      args:
+        creates: "{{ openvpn_path }}/interne/config/ovpn_env.sh"
 
-      - name: Créer la configuration OpenVPN INTERNE
-        copy:
-          dest: "{{ openvpn_path }}/interne/config/openvpn.conf"
-          mode: '0644'
-          content: |
-            server {{ openvpn_interne_subnet }} {{ openvpn_interne_netmask }}
-            port {{ openvpn_interne_port }}
-            proto udp
-            dev tun
-            ca /etc/openvpn/pki/ca.crt
-            cert /etc/openvpn/pki/issued/server.crt
-            key /etc/openvpn/pki/private/server.key
-            dh /etc/openvpn/pki/dh.pem
-            tls-auth /etc/openvpn/pki/ta.key 0
-            cipher AES-256-CBC
-            auth SHA256
-            keepalive 10 120
-            persist-key
-            persist-tun
-            status /etc/openvpn/logs/status.log
-            verb 3
-            
-            # Auth LDAP
-            plugin /usr/lib/openvpn/plugins/openvpn-auth-ldap.so /etc/openvpn/auth/ldap-interne.conf
-            verify-client-cert none
-            username-as-common-name
-            
-            # Routes internes
-            push "route 192.168.20.0 255.255.255.0"
-            
-            # DNS
-            push "dhcp-option DNS 192.168.20.40"
-            push "dhcp-option DNS 8.8.8.8"
+    - name: Créer fichier openvpn.conf pour serveur INTERNE
+      copy:
+        dest: "{{ openvpn_path }}/interne/config/openvpn.conf"
+        mode: '0644'
+        content: |
+          server {{ openvpn_interne_subnet }} {{ openvpn_interne_netmask }}
+          port {{ openvpn_interne_port }}
+          proto udp
+          dev tun
+          ca /etc/openvpn/pki/ca.crt
+          cert /etc/openvpn/pki/issued/server.crt
+          key /etc/openvpn/pki/private/server.key
+          dh /etc/openvpn/pki/dh.pem
+          tls-auth /etc/openvpn/pki/ta.key 0
+          cipher AES-256-CBC
+          auth SHA256
+          keepalive 10 120
+          persist-key
+          persist-tun
+          status /etc/openvpn/logs/status.log
+          verb 3
+          
+          plugin /usr/lib/openvpn/plugins/openvpn-auth-ldap.so /etc/openvpn/auth/ldap-interne.conf
+          verify-client-cert none
+          username-as-common-name
 
-      - name: Créer le répertoire auth pour OpenVPN INTERNE
-        file:
-          path: "{{ openvpn_path }}/interne/config/auth"
-          state: directory
-          mode: "0755"
+          push "route 192.168.20.0 255.255.255.0"
+          push "dhcp-option DNS 192.168.20.40"
+          push "dhcp-option DNS 8.8.8.8"
 
-      - name: Créer la conf LDAP pour OpenVPN INTERNE
-        copy:
-          dest: "{{ openvpn_path }}/interne/config/auth/ldap-interne.conf"
-          mode: "0644"
-          content: |
-            <LDAP>
-              URL ldap://{{ ldap_host }}:{{ ldap_port }}
-              BindDN {{ ldap_admin_dn }}
-              Password {{ ldap_admin_password }}
-              Timeout 15
-              TLSEnable no
-            </LDAP>
-            
-            <Authorization>
-              BaseDN "{{ ldap_base_dn }}"
-              SearchFilter "(&(objectClass=posixAccount)(uid=%u)(memberOf=cn=VPN_INTERNE,ou=groups,{{ ldap_base_dn }}))"
-              RequireGroup false
-            </Authorization>
+    - name: Créer répertoire auth pour OpenVPN
+      file:
+        path: "{{ openvpn_path }}/interne/config/auth"
+        state: directory
+        mode: "0755"
 
+    - name: Créer fichier auth LDAP
+      copy:
+        dest: "{{ openvpn_path }}/interne/config/auth/ldap-interne.conf"
+        mode: "0644"
+        content: |
+          <LDAP>
+            URL ldap://{{ ldap_host }}:{{ ldap_port }}
+            BindDN {{ ldap_admin_dn }}
+            Password {{ ldap_admin_password }}
+            Timeout 15
+            TLSEnable no
+          </LDAP>
 
-      - name: Dockerfile OpenVPN (support LDAP)
-        copy:
-          dest: "{{ openvpn_path }}/Dockerfile"
-          mode: '0644'
-          content: |
-            FROM kylemanna/openvpn:latest
-            RUN apk add --no-cache openvpn-auth-ldap openldap-dev
-            RUN mkdir -p /var/log/openvpn /etc/openvpn/logs
-            RUN ln -sf /dev/stdout /var/log/openvpn/openvpn.log
+          <Authorization>
+            BaseDN "{{ ldap_base_dn }}"
+            SearchFilter "(&(objectClass=posixAccount)(uid=%u)(memberOf=cn=VPN_INTERNE,ou=groups,{{ ldap_base_dn }}))"
+            RequireGroup false
+          </Authorization>
 
-      - name: Construire l’image Docker personnalisée
-        shell: |
-          cd {{ openvpn_path }}
-          docker build -t openvpn-ldap:latest .
+    - name: Créer Dockerfile OpenVPN avec support LDAP
+      copy:
+        dest: "{{ openvpn_path }}/Dockerfile"
+        mode: '0644'
+        content: |
+          FROM kylemanna/openvpn:latest
+          RUN apk add --no-cache openvpn-auth-ldap openldap-dev
+          RUN mkdir -p /var/log/openvpn /etc/openvpn/logs
+          RUN ln -sf /dev/stdout /var/log/openvpn/openvpn.log
 
-      - name: Générer les certificats et clés OpenVPN INTERNE
-        shell: |
-          mkdir -p {{ openvpn_path }}/interne/config/pki/private {{ openvpn_path }}/interne/config/pki/issued
-          openssl genrsa -out {{ openvpn_path }}/interne/config/pki/ca.key 2048
-          openssl req -x509 -new -nodes -key {{ openvpn_path }}/interne/config/pki/ca.key -sha256 -days 3650 -out {{ openvpn_path }}/interne/config/pki/ca.crt -subj "/CN=OpenVPN-CA-INTERNE"
-          openssl genrsa -out {{ openvpn_path }}/interne/config/pki/private/server.key 2048
-          openssl req -new -key {{ openvpn_path }}/interne/config/pki/private/server.key -out {{ openvpn_path }}/interne/config/pki/server.csr -subj "/CN={{ fqdn }}"
-          openssl x509 -req -in {{ openvpn_path }}/interne/config/pki/server.csr -CA {{ openvpn_path }}/interne/config/pki/ca.crt -CAkey {{ openvpn_path }}/interne/config/pki/ca.key -CAcreateserial -out {{ openvpn_path }}/interne/config/pki/issued/server.crt -days 3650
-          openssl dhparam -out {{ openvpn_path }}/interne/config/pki/dh.pem 2048
-          openvpn --genkey --secret {{ openvpn_path }}/interne/config/pki/ta.key
-          mkdir -p {{ openvpn_path }}/interne/config/logs
-          touch {{ openvpn_path }}/interne/config/logs/status.log
-        args:
-          creates: "{{ openvpn_path }}/interne/config/pki/ca.crt"
+    - name: Construire l'image Docker OpenVPN-ldap
+      shell: |
+        cd {{ openvpn_path }}
+        docker build -t openvpn-ldap:latest .
 
-      - name: docker-compose.yml (service interne uniquement)
-        copy:
-          dest: "{{ openvpn_path }}/docker-compose.yml"
-          mode: '0644'
-          content: |
-            services:
-              openvpn-interne:
-                image: openvpn-ldap:latest
-                container_name: openvpn-interne
-                cap_add:
-                  - NET_ADMIN
-                ports:
-                  - "{{ openvpn_interne_port }}:{{ openvpn_interne_port }}/udp"
-                restart: unless-stopped
-                networks:
-                  - lldap
-                volumes:
-                  - {{ openvpn_path }}/interne/config:/etc/openvpn
-                  - {{ openvpn_path }}/interne/config/auth:/etc/openvpn/auth
-            
-            networks:
-              lldap:
-                external: true
+    - name: Générer la configuration OpenVPN (ovpn_genconfig)
+      shell: |
+        docker run --rm -v {{ openvpn_path }}/interne/config:/etc/openvpn \
+          kylemanna/openvpn ovpn_genconfig \
+          -u udp://{{ fqdn }}:{{ openvpn_interne_port }} \
+          -r {{ openvpn_interne_subnet }}/24 \
+          -p "route 192.168.20.0 255.255.255.0"
+      args:
+        creates: "{{ openvpn_path }}/interne/config/ovpn_env.sh"
 
-      - name: Initialiser OpenVPN INTERNE via kylemanna/openvpn
-        shell: |
-          docker run -v {{ openvpn_path }}/interne/config:/etc/openvpn --rm kylemanna/openvpn \
-            ovpn_genconfig -u udp://{{ fqdn }}:{{ openvpn_interne_port }} \
-            -r {{ openvpn_interne_subnet }}/24 -p "route 192.168.20.0 255.255.255.0"
-          docker run -v {{ openvpn_path }}/interne/config:/etc/openvpn --rm \
-            -e EASYRSA_BATCH=1 kylemanna/openvpn ovpn_initpki nopass
-        args:
-          creates: "{{ openvpn_path }}/interne/config/openvpn.conf"
-        ignore_errors: true
+    - name: Initialiser PKI OpenVPN (ovpn_initpki)
+      shell: |
+        docker run --rm -v {{ openvpn_path }}/interne/config:/etc/openvpn \
+          -e EASYRSA_BATCH=1 \
+          kylemanna/openvpn ovpn_initpki nopass
+      args:
+        creates: "{{ openvpn_path }}/interne/config/pki/ca.crt"
 
-      - name: Démarrer le conteneur OpenVPN
-        command: docker compose up -d
-        args:
-          chdir: "{{ openvpn_path }}"
+    - name: Créer les répertoires nécessaires (pki/issued, pki/private, logs)
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ openvpn_path }}/interne/config/pki/issued"
+        - "{{ openvpn_path }}/interne/config/pki/private"
+        - "{{ openvpn_path }}/interne/config/logs"
 
-      - name: Attendre que le conteneur soit prêt
-        pause:
-          seconds: 10
+    - name: Générer certificat serveur OpenVPN
+      shell: |
+        docker run --rm -v {{ openvpn_path }}/interne/config:/etc/openvpn \
+          -e EASYRSA_BATCH=1 kylemanna/openvpn \
+          easyrsa build-server-full server nopass
+      args:
+        creates: "{{ openvpn_path }}/interne/config/pki/issued/server.crt"
 
-      - name: Créer le fichier de configuration client (interne)
-        copy:
-          dest: "{{ openvpn_path }}/client-interne.ovpn"
-          mode: '0644'
-          content: |
-            client
-            dev tun
-            proto udp
-            remote {{ ansible_default_ipv4.address }} {{ openvpn_interne_port }}
-            resolv-retry infinite
-            nobind
-            persist-key
-            persist-tun
-            auth SHA256
-            cipher AES-256-CBC
-            verb 3
-            key-direction 1
-            remote-cert-tls server
-            auth-user-pass
-            # Utilisez vos identifiants LDAP (groupe VPN_INTERNE)
+    - name: docker-compose.yml OpenVPN interne
+      copy:
+        dest: "{{ openvpn_path }}/docker-compose.yml"
+        mode: '0644'
+        content: |
+          version: '2'
+          services:
+            openvpn-interne:
+              image: openvpn-ldap:latest
+              container_name: openvpn-interne
+              cap_add:
+                - NET_ADMIN
+              ports:
+                - "{{ openvpn_interne_port }}:{{ openvpn_interne_port }}/udp"
+              restart: unless-stopped
+              networks:
+                - lldap
+              volumes:
+                - {{ openvpn_path }}/interne/config:/etc/openvpn
+                - {{ openvpn_path }}/interne/config/auth:/etc/openvpn/auth
 
-            <ca>
-            {{ lookup('file', openvpn_path + '/interne/config/pki/ca.crt') }}
-            </ca>
+          networks:
+            lldap:
+              external: true
 
-            <tls-auth>
-            {{ lookup('file', openvpn_path + '/interne/config/pki/ta.key') }}
-            </tls-auth>
+    - name: Démarrer le conteneur OpenVPN
+      community.docker.docker_compose_v2:
+        project_src: "{{ openvpn_path }}"
+        state: present
+        recreate: always
 
-
-      - name: Afficher l’emplacement du fichier client
-        debug:
-          msg: "Le fichier client est disponible dans {{ openvpn_path }}/client-interne.ovpn"
-
-      - name: Script helper pour générer une conf client (interne)
-        copy:
-          dest: "{{ openvpn_path }}/generate-client-config.sh"
-          mode: '0755'
-          content: |
-            #!/bin/bash
-            # Génère un .ovpn pour un utilisateur interne
-            if [ $# -ne 1 ]; then
-              echo "Usage: $0 <username>"
-              exit 1
-            fi
-            
-            USERNAME=$1
-            OUTPUT_DIR="{{ openvpn_path }}/clients"
-            OUTPUT_FILE="$OUTPUT_DIR/${USERNAME}-interne.ovpn"
-            CONTAINER="openvpn-interne"
-            
-            # Vérifier l’utilisateur LDAP
-            docker exec lldap ldapsearch -x -H ldap://localhost:389 \
-              -D "{{ ldap_admin_dn }}" -w "{{ ldap_admin_password }}" \
-              -b "{{ ldap_base_dn }}" "(uid=$USERNAME)" > /dev/null
-            if [ $? -ne 0 ]; then
-              echo "L’utilisateur $USERNAME n’existe pas dans LDAP"
-              exit 1
-            fi
-            
-            # Vérifier appartenance au groupe VPN_INTERNE
-            docker exec lldap ldapsearch -x -H ldap://localhost:389 \
-              -D "{{ ldap_admin_dn }}" -w "{{ ldap_admin_password }}" \
-              -b "{{ ldap_base_dn }}" "(&(cn=VPN_INTERNE)(memberUid=$USERNAME))" > /dev/null
-            if [ $? -ne 0 ]; then
-              echo "L’utilisateur $USERNAME n’est pas membre du groupe VPN_INTERNE"
-              exit 1
-            fi
-            
-            # Générer la configuration
-            docker run -v {{ openvpn_path }}/interne/config:/etc/openvpn --rm \
-              kylemanna/openvpn easyrsa build-client-full "$USERNAME" nopass
-            docker run -v {{ openvpn_path }}/interne/config:/etc/openvpn --rm \
-              kylemanna/openvpn ovpn_getclient "$USERNAME" > "$OUTPUT_FILE"
-            
-            echo "Configuration générée : $OUTPUT_FILE"
+    - name: Générer fichier helper pour création config clients
+      copy:
+        dest: "{{ openvpn_path }}/generate-client-config.sh"
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          if [ $# -ne 1 ]; then
+            echo "Usage: $0 <username>"
+            exit 1
+          fi
+          USERNAME=$1
+          OUTPUT_DIR="{{ openvpn_path }}/clients"
+          mkdir -p "$OUTPUT_DIR"
+          docker run --rm -v {{ openvpn_path }}/interne/config:/etc/openvpn \
+            -e EASYRSA_BATCH=1 \
+            kylemanna/openvpn easyrsa build-client-full "$USERNAME" nopass
+          docker run --rm -v {{ openvpn_path }}/interne/config:/etc/openvpn \
+            kylemanna/openvpn ovpn_getclient "$USERNAME" > "$OUTPUT_DIR/${USERNAME}-interne.ovpn"
+          echo "Client configuration saved to: $OUTPUT_DIR/${USERNAME}-interne.ovpn"

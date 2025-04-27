@@ -33,12 +33,13 @@ sudo iptables -A FORWARD -s 192.168.30.0/24 -d 192.168.20.40 -p udp --dport 53 -
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.10 -p tcp --dport 80 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.10 -p tcp --dport 443 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.40 -p udp --dport 53 -j ACCEPT
-
 sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.14 -p tcp --dport 9200 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.20.0/24 -d 192.168.40.14 -p tcp --dport 8220 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.20.0/24 -p tcp --dport 22 -j ACCEPT
 sudo iptables -A FORWARD -s 192.168.20.20 -d 192.168.40.10 -p tcp --dport 389 -j ACCEPT
-sudo iptables -A FORWARD -s 192.168.20.20 -d 192.168.40.10.20 -p udp --dport 1194 -j ACCEPT
+# sudo iptables -A FORWARD -s 192.168.20.20 -d 192.168.40.20 -p udp --dport 1194 -j ACCEPT
+
+sudo iptables -A FORWARD -s 192.168.10.50 -d 192.168.40.20 -p udp --dport 1194 -j ACCEPT
 
 # .30 et .40
 sudo iptables -A FORWARD -s 192.168.40.0/24 -d 192.168.30.10 -p tcp --dport 8080 -j ACCEPT
