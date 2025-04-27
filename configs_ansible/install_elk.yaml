@@ -1,6 +1,7 @@
 - name: Déploiement complet ELK + Fleet + Agent
-  hosts: all
-  become: yes
+  hosts: elk
+  become: false
+  gather_facts: false
   vars:
     kibana_ip : "192.168.40.14" #IP DU SERVEUR
     elastic_version: "9.0.0" 
@@ -30,12 +31,6 @@
           - jq
         state: present
         update_cache: yes
-
-    - name: Ajouter utilisateur actuel au groupe docker
-      user:
-        name: "{{ ansible_user_id }}"
-        groups: docker
-        append: yes
 
     - name: Cloner le repo docker-elk
       git:
@@ -191,7 +186,7 @@
 
 ## REGLES DE DETECTION 
 - name: Créer toutes les règles de détection via cURL
-  hosts: localhost
+  hosts: elk 
   gather_facts: false
   vars:
     kibana_host: "192.168.40.14" # IP DU SERVEUR

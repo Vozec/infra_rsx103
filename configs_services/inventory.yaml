@@ -4,6 +4,28 @@ all:
       ansible_connection: local
 
   children:
+    elk:
+      hosts:
+        ELK:
+          ansible_host: 192.168.40.14
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become: true
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+    
+    vpn_interne:
+      hosts:
+        VPN_INTERNE:
+          ansible_host: 192.168.20.20
+          ansible_user: vagrant
+          ansible_password: vagrant
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_become: true
+          ansible_become_method: sudo
+          ansible_become_password: vagrant
+
     agents:
       hosts:
         Interne:
@@ -58,7 +80,7 @@ all:
           ansible_host: 192.168.20.20
           ansible_user: vagrant
           ansible_password: vagrant
-          ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+          ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
           ansible_become_method: sudo
           ansible_become_password: vagrant
 
