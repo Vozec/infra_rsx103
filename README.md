@@ -6,6 +6,11 @@ setx VAGRANT_DISABLE_VBOXSYMLINKCREATE 1
 export VAGRANT_DISABLE_VBOXSYMLINKCREATE=1
 ```
 
+- ajouter le bon subnet dans la config Vbox:
+```bash
+echo '* 192.168.0.0/16' > /etc/vbox/networks.conf
+```
+
 # Utilisation de Vagrant
 ```
 vagrant up
