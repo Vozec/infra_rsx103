@@ -6,8 +6,8 @@ Vagrant.configure("2") do |config|
     vm6.vm.hostname = "admin"
     vm6.vm.network "private_network", ip: "192.168.40.10"
     vm6.vm.provider "virtualbox" do |vb|
-      vb.memory = "1024"
-      vb.cpus = 1
+      vb.memory = "4096"
+      vb.cpus = 2
     end
     vm6.vm.provision "ansible" do |ansible|
       ansible.playbook = "configs_ansible/install_docker.yaml"
@@ -34,7 +34,7 @@ Vagrant.configure("2") do |config|
     vm3.vm.hostname = "openvpn-admin"
     vm3.vm.network "private_network", ip: "192.168.40.20"
     vm3.vm.provider "virtualbox" do |vb|
-      vb.memory = "512"
+      vb.memory = "1024"
       vb.cpus = 1
     end
     vm3.vm.provision "ansible" do |ansible|
@@ -59,7 +59,7 @@ Vagrant.configure("2") do |config|
     vm7.vm.network "private_network", ip: "192.168.40.14"
     vm7.vm.provider "virtualbox" do |vb|
       vb.memory = "4096"
-      vb.cpus = 1
+      vb.cpus = 2
     end
     vm7.vm.provision "ansible" do |ansible|
       ansible.playbook = "configs_ansible/install_docker.yaml"
@@ -79,12 +79,12 @@ Vagrant.configure("2") do |config|
 
 
   # # VM4 - Services internes
-  config.vm.define "<" do |vm4|
+  config.vm.define "service_internal" do |vm4|
     vm4.vm.hostname = "services"
     vm4.vm.network "private_network", ip: "192.168.30.10"
     vm4.vm.provider "virtualbox" do |vb|
-      vb.memory = "2048"
-      vb.cpus = 2
+      vb.memory = "4096"
+      vb.cpus = 4
     end
     vm4.vm.provision "ansible" do |ansible|
       ansible.playbook = "configs_ansible/install_docker.yaml"
@@ -113,7 +113,7 @@ Vagrant.configure("2") do |config|
     vm8.vm.network "private_network", ip: "192.168.20.30"
     vm8.vm.network "private_network", ip: "192.168.40.30"
     vm8.vm.provider "virtualbox" do |vb|
-      vb.memory = "512"
+      vb.memory = "1024"
       vb.cpus = 1
     end
     vm8.vm.provision "ansible" do |ansible|
@@ -136,7 +136,7 @@ Vagrant.configure("2") do |config|
     vm1.vm.box = "ubuntu/focal64"
     vm1.vm.network "private_network", ip: "192.168.20.10"
     vm1.vm.provider "virtualbox" do |vb|
-      vb.memory = "2048"
+      vb.memory = "4096"
       vb.cpus = 2
     end
     vm1.vm.provision "ansible" do |ansible|
@@ -164,7 +164,7 @@ Vagrant.configure("2") do |config|
     vm3.vm.hostname = "openvpn-dmz"
     vm3.vm.network "private_network", ip: "192.168.20.20"
     vm3.vm.provider "virtualbox" do |vb|
-      vb.memory = "512"
+      vb.memory = "1024"
       vb.cpus = 1
     end
     vm3.vm.provision "ansible" do |ansible|
@@ -192,7 +192,7 @@ Vagrant.configure("2") do |config|
     vm2.vm.hostname = "dns"
     vm2.vm.network "private_network", ip: "192.168.20.40"
     vm2.vm.provider "virtualbox" do |vb|
-      vb.memory = "512"
+      vb.memory = "1024"
       vb.cpus = 1
     end
     vm2.vm.provision "ansible" do |ansible|
@@ -217,7 +217,7 @@ Vagrant.configure("2") do |config|
     vm9.vm.network "private_network", ip: "192.168.20.50"
     vm9.vm.network "private_network", ip: "192.168.10.50"
     vm9.vm.provider "virtualbox" do |vb|
-      vb.memory = "512"
+      vb.memory = "1024"
       vb.cpus = 1
     end
     vm9.vm.provision "ansible" do |ansible|
@@ -241,7 +241,7 @@ Vagrant.configure("2") do |config|
     vm0.vm.hostname = "public-machine"
     vm0.vm.network "private_network", ip: "192.168.10.10"
     vm0.vm.provider "virtualbox" do |vb|
-      vb.memory = "512"
+      vb.memory = "1024"
       vb.cpus = 1
     end
     vm0.vm.provision "shell", inline: <<-SHELL
