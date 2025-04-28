@@ -146,6 +146,12 @@
           gidNumber: 10001
           memberUid: {{ lldap_admin }}
 
+          dn: cn=authelia,ou=groups,dc={{ entreprise }},dc={{ extension }}
+          objectClass: posixGroup
+          cn: authelia
+          gidNumber: 10002
+          memberUid: {{ lldap_admin }}
+
     - name: Attendre que LDAP soit accessible sur 389
       wait_for:
         host: "127.0.0.1"
